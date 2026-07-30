@@ -21,7 +21,7 @@
 "settings.general.automatic" = "自动";
 "settings.general.behavior" = "行为";
 "settings.general.hideFullscreen" = "全屏时隐藏";
-"settings.general.autoHideNoSessions" = "无活跃会话时自动隐藏";
+"settings.general.showOnlyForNotifications" = "仅在通知时显示";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";

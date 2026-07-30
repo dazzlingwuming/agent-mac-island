@@ -23,6 +23,7 @@ final class AppModel {
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
+    private static let showOnlyForNotificationsDefaultsKey = "overlay.showOnlyForNotifications"
     private static let legacyIslandSessionStateIndicatorDefaultsKey = "appearance.island.v8.stateIndicator"
     private static let legacyIslandSessionGroupDefaultsKey = "appearance.island.v8.sessionGroup"
     private static let legacyIslandSessionSortDefaultsKey = "appearance.island.v8.sessionSort"
@@ -263,6 +264,13 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, suppressFrontmostNotifications != oldValue else { return }
             UserDefaults.standard.set(suppressFrontmostNotifications, forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        }
+    }
+    var showOnlyForNotifications: Bool = false {
+        didSet {
+            guard hasFinishedInit, showOnlyForNotifications != oldValue else { return }
+            UserDefaults.standard.set(showOnlyForNotifications, forKey: Self.showOnlyForNotificationsDefaultsKey)
+            overlay.showOnlyForNotifications = showOnlyForNotifications
         }
     }
     var launchAtLoginEnabled: Bool = false {
@@ -510,10 +518,13 @@ final class AppModel {
     private var hasStarted = false
 
     @ObservationIgnored
-    private let bridgeServer = BridgeServer()
+    private let bridgeSocketURL: URL
 
     @ObservationIgnored
-    private var bridgeClient = LocalBridgeClient()
+    private let bridgeServer: BridgeServer
+
+    @ObservationIgnored
+    private var bridgeClient: LocalBridgeClient
 
     @ObservationIgnored
     private let terminalJumpAction: @Sendable (JumpTarget) throws -> String
@@ -588,6 +599,10 @@ final class AppModel {
             await ForegroundTerminalSessionProbe().matches(session: session)
         }
     ) {
+        let bridgeSocketURL = BridgeSocketLocation.currentURL()
+        self.bridgeSocketURL = bridgeSocketURL
+        self.bridgeServer = BridgeServer(socketURL: bridgeSocketURL)
+        self.bridgeClient = LocalBridgeClient(socketURL: bridgeSocketURL)
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
         UserDefaults.standard.register(defaults: [
@@ -595,12 +610,14 @@ final class AppModel {
             Self.hapticFeedbackEnabledDefaultsKey: false,
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
+            Self.showOnlyForNotificationsDefaultsKey: false,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
         showDockIcon = UserDefaults.standard.bool(forKey: Self.showDockIconDefaultsKey)
         hapticFeedbackEnabled = UserDefaults.standard.bool(forKey: Self.hapticFeedbackEnabledDefaultsKey)
         suppressFrontmostNotifications = UserDefaults.standard.bool(forKey: Self.suppressFrontmostNotificationsDefaultsKey)
+        showOnlyForNotifications = UserDefaults.standard.bool(forKey: Self.showOnlyForNotificationsDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.showCodexUsageDefaultsKey) != nil {
             showCodexUsage = UserDefaults.standard.bool(forKey: Self.showCodexUsageDefaultsKey)
         } else {
@@ -621,6 +638,7 @@ final class AppModel {
         }
 
         overlay.appModel = self
+        overlay.showOnlyForNotifications = showOnlyForNotifications
         overlay.restoreDisplayPreference()
         overlay.startObservingDisplayChanges()
         overlay.onStatusMessage = { [weak self] message in
@@ -1140,7 +1158,7 @@ final class AppModel {
 
         // Create a fresh client for each connection attempt so we don't
         // have to worry about stale file-descriptor state.
-        let client = LocalBridgeClient()
+        let client = LocalBridgeClient(socketURL: bridgeSocketURL)
         bridgeClient = client
 
         let stream: AsyncThrowingStream<AgentEvent, Error>

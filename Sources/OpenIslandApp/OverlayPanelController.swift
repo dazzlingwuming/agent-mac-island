@@ -50,14 +50,22 @@ final class OverlayPanelController {
         OverlayDisplayResolver.availableDisplayOptions()
     }
 
-    func ensurePanel(model: AppModel, preferredScreenID: String?) {
+    func ensurePanel(
+        model: AppModel,
+        preferredScreenID: String?,
+        visible: Bool = true
+    ) {
         self.model = model
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-        panel.orderFrontRegardless()
         panel.ignoresMouseEvents = true
         panel.acceptsMouseMovedEvents = false
+        if visible {
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderOut(nil)
+        }
         startEventMonitoring()
     }
 
@@ -73,9 +81,10 @@ final class OverlayPanelController {
         return diagnostics
     }
 
-    func hide() {
+    func hideCompletely() {
         panel?.ignoresMouseEvents = true
         panel?.acceptsMouseMovedEvents = false
+        panel?.orderOut(nil)
     }
 
     func setInteractive(_ interactive: Bool) {
@@ -259,6 +268,11 @@ final class OverlayPanelController {
                 model.handlePointerExitedIslandSurface()
             }
         }
+    }
+
+    func exerciseHiddenOverlayHoverForHarness() {
+        guard !notchRect.isEmpty else { return }
+        handleMouseMoved(NSPoint(x: notchRect.midX, y: notchRect.midY))
     }
 
     private func handleMouseDown(_ screenLocation: NSPoint) {

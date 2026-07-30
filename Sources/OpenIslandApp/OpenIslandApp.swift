@@ -23,6 +23,13 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
 
             model.ignoresPointerExitDuringHarness = harnessLaunchConfiguration.scenario != nil
             model.disablesOverlayEventMonitoringDuringHarness = harnessLaunchConfiguration.scenario != nil
+            if harnessLaunchConfiguration.scenario != nil,
+               let showOnlyForNotifications =
+                   harnessLaunchConfiguration.showOnlyForNotifications {
+                // Harness visibility overrides are process-local and must not
+                // alter the user's persisted setting.
+                model.overlay.showOnlyForNotifications = showOnlyForNotifications
+            }
             model.startIfNeeded(
                 startBridge: harnessLaunchConfiguration.shouldStartBridge,
                 shouldPerformBootAnimation: harnessLaunchConfiguration.shouldPerformBootAnimation,
@@ -35,6 +42,11 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
                     scenario.snapshot(),
                     presentOverlay: harnessLaunchConfiguration.presentOverlay
                 )
+                if harnessLaunchConfiguration.exerciseHiddenOverlayHover {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+                        model.overlay.exerciseHiddenOverlayHoverForHarness()
+                    }
+                }
             }
 
             // Hide all windows on launch — settings opens on demand only.

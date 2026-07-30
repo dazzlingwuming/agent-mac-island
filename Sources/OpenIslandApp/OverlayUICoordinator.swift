@@ -13,6 +13,14 @@ final class OverlayUICoordinator {
     var notchOpenReason: NotchOpenReason?
     var islandSurface: IslandSurface = .sessionList()
     var isOverlayVisible: Bool { notchStatus != .closed }
+    var isOverlayPanelVisible: Bool { overlayPanelController.isVisible }
+
+    var showOnlyForNotifications = false {
+        didSet {
+            guard showOnlyForNotifications != oldValue else { return }
+            updateClosedOverlayVisibility()
+        }
+    }
 
     var overlayDisplayOptions: [OverlayDisplayOption] = []
     var overlayPlacementDiagnostics: OverlayPlacementDiagnostics?
@@ -163,9 +171,11 @@ final class OverlayUICoordinator {
                 self?.notificationAutoCollapseTask = nil
             },
             afterStateChange: { [weak self] in
-                self?.autoCollapseSurfaceHasBeenEntered = false
-                self?.isPointerInsideIslandSurface = false
-                self?.appModel?.measuredNotificationContentHeight = 0
+                guard let self else { return }
+                self.autoCollapseSurfaceHasBeenEntered = false
+                self.isPointerInsideIslandSurface = false
+                self.appModel?.measuredNotificationContentHeight = 0
+                self.updateClosedOverlayVisibility()
             }
         )
     }
@@ -212,16 +222,18 @@ final class OverlayUICoordinator {
     }
 
     func notchPop() {
-        guard notchStatus == .closed else { return }
+        guard notchStatus == .closed, !showOnlyForNotifications else { return }
         islandSurface = .sessionList()
         notchStatus = .popping
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard self?.notchStatus == .popping else { return }
-            self?.notchStatus = .closed
+            guard let self, self.notchStatus == .popping else { return }
+            self.notchStatus = .closed
+            self.updateClosedOverlayVisibility()
         }
     }
 
     func performBootAnimation() {
+        guard !showOnlyForNotifications else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.notchOpen(reason: .boot, surface: .sessionList())
@@ -234,7 +246,11 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
-        overlayPanelController.ensurePanel(model: appModel, preferredScreenID: preferredOverlayScreenID)
+        overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID,
+            visible: notchStatus != .closed || !showOnlyForNotifications
+        )
     }
 
     // Legacy compatibility
@@ -290,12 +306,24 @@ final class OverlayUICoordinator {
             return false
         }
 
-        if notchOpenReason == .hover && !islandSurface.isNotificationCard {
+        if notchOpenReason == .notification {
+            return islandSurface.autoDismissesWhenPresentedAsNotification(
+                session: activeIslandCardSession
+            )
+        }
+
+        if islandSurface.isNotificationCard,
+           !islandSurface.autoDismissesWhenPresentedAsNotification(
+               session: activeIslandCardSession
+           ) {
+            return false
+        }
+
+        if showOnlyForNotifications {
             return true
         }
 
-        return notchOpenReason == .notification
-            && islandSurface.autoDismissesWhenPresentedAsNotification(session: activeIslandCardSession)
+        return notchOpenReason == .hover && !islandSurface.isNotificationCard
     }
 
     var autoCollapseOnMouseLeaveRequiresPriorSurfaceEntry: Bool {
@@ -463,6 +491,10 @@ final class OverlayUICoordinator {
 
     // MARK: - Debug snapshots (overlay portion)
 
+    func exerciseHiddenOverlayHoverForHarness() {
+        overlayPanelController.exerciseHiddenOverlayHoverForHarness()
+    }
+
     func applyOverlayState(from snapshot: IslandDebugSnapshot, presentOverlay: Bool, autoCollapseNotificationCards: Bool) {
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
@@ -499,7 +531,8 @@ final class OverlayUICoordinator {
             case .closed, .popping:
                 self.overlayPanelController.ensurePanel(
                     model: appModel,
-                    preferredScreenID: self.preferredOverlayScreenID
+                    preferredScreenID: self.preferredOverlayScreenID,
+                    visible: snapshot.notchStatus != .closed || !self.showOnlyForNotifications
                 )
                 self.refreshOverlayPlacement()
             }
@@ -508,6 +541,22 @@ final class OverlayUICoordinator {
     }
 
     // MARK: - Persistence
+
+    private func updateClosedOverlayVisibility() {
+        guard notchStatus == .closed else { return }
+
+        if showOnlyForNotifications {
+            overlayPanelController.hideCompletely()
+            return
+        }
+
+        guard !overlayPanelController.isVisible, let appModel else { return }
+        overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID,
+            visible: true
+        )
+    }
 
     private func persistOverlayDisplayPreference() {
         let defaults = UserDefaults.standard
