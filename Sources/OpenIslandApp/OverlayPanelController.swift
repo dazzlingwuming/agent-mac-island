@@ -46,6 +46,12 @@ final class OverlayPanelController {
         reason == .click
     }
 
+    /// An invisible trigger needs deliberate dwell time, while the visible
+    /// closed pill keeps its established, responsive hover behavior.
+    nonisolated static func hoverOpenDelay(showOnlyForNotifications: Bool) -> TimeInterval {
+        showOnlyForNotifications ? 2.0 : 0.15
+    }
+
     func availableDisplayOptions() -> [OverlayDisplayOption] {
         OverlayDisplayResolver.availableDisplayOptions()
     }
@@ -300,10 +306,13 @@ final class OverlayPanelController {
         hoverCancelGrace?.cancel()
         hoverCancelGrace = nil
 
-        guard model != nil else { return }
+        guard let model else { return }
 
         guard hoverTimer == nil else { return }
 
+        let delay = Self.hoverOpenDelay(
+            showOnlyForNotifications: model.overlay.showOnlyForNotifications
+        )
         let item = DispatchWorkItem { [weak self] in
             guard let self, let model = self.model else { return }
             self.performHoverOpen(model)
@@ -311,7 +320,7 @@ final class OverlayPanelController {
         }
 
         hoverTimer = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + AppModel.hoverOpenDelay, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     private func performHoverOpen(_ model: AppModel) {
