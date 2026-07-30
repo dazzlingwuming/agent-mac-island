@@ -92,6 +92,24 @@ struct OverlayPanelControllerTests {
         #expect(!OverlayPanelController.shouldActivatePanel(for: nil))
     }
 
+    @Test
+    func notificationOnlyHoverRequiresTwoSecondDwell() {
+        #expect(
+            OverlayPanelController.hoverOpenDelay(
+                showOnlyForNotifications: true
+            ) == 2.0
+        )
+    }
+
+    @Test
+    func defaultHoverDelayRemainsBackwardCompatible() {
+        #expect(
+            OverlayPanelController.hoverOpenDelay(
+                showOnlyForNotifications: false
+            ) == 0.15
+        )
+    }
+
     // MARK: - islandClosedHeight
 
     @Test
