@@ -28,7 +28,15 @@ app_binary="$build_root/OpenIslandApp"
 hooks_binary="$build_root/OpenIslandHooks"
 setup_binary="$build_root/OpenIslandSetup"
 
-python3 "$brand_script"
+if python3 -c 'import PIL' >/dev/null 2>&1; then
+  python3 "$brand_script"
+elif [ -f "$brand_icon" ]; then
+  echo "⚠ Pillow is not installed; using the committed OpenIsland.icns."
+else
+  echo "error: Pillow is required to generate the missing brand icon." >&2
+  echo "Install it with: python3 -m pip install Pillow" >&2
+  exit 1
+fi
 if [ "$skip_setup" = false ]; then
   "$setup_binary" install --hooks-binary "$hooks_binary"
 fi
