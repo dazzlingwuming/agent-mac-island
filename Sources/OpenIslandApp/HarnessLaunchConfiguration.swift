@@ -5,6 +5,8 @@ struct HarnessLaunchConfiguration {
     let presentOverlay: Bool
     let shouldStartBridge: Bool
     let shouldPerformBootAnimation: Bool
+    let showOnlyForNotifications: Bool?
+    let exerciseHiddenOverlayHover: Bool
     let captureDelay: TimeInterval?
     let autoExitAfter: TimeInterval?
     let artifactDirectoryURL: URL?
@@ -22,6 +24,15 @@ struct HarnessLaunchConfiguration {
         shouldPerformBootAnimation = Self.boolValue(
             environment["OPEN_ISLAND_HARNESS_BOOT_ANIMATION"],
             default: true
+        )
+        showOnlyForNotifications = environment[
+            "OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS"
+        ].map {
+            Self.boolValue($0, default: false)
+        }
+        exerciseHiddenOverlayHover = Self.boolValue(
+            environment["OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER"],
+            default: false
         )
         captureDelay = Self.timeIntervalValue(
             from: environment["OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS"]

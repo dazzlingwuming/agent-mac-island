@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import OpenIslandCore
 
 struct HarnessArtifactReport: Codable {
     struct AccessibilitySummary: Codable {
@@ -79,6 +80,12 @@ struct HarnessArtifactReport: Codable {
     let presentOverlay: Bool
     let startedBridge: Bool
     let performedBootAnimation: Bool
+    let showOnlyForNotifications: Bool
+    let persistedShowOnlyForNotifications: Bool
+    let exercisedHiddenOverlayHover: Bool
+    let overlayPanelVisible: Bool
+    let bridgeReady: Bool
+    let bridgeSocketExists: Bool
     let capturedAt: Date
     let launchToCaptureSeconds: Double
     let windows: [WindowArtifact]
@@ -155,6 +162,14 @@ enum HarnessArtifactRecorder {
             presentOverlay: configuration.presentOverlay,
             startedBridge: configuration.shouldStartBridge,
             performedBootAnimation: configuration.shouldPerformBootAnimation,
+            showOnlyForNotifications: model.overlay.showOnlyForNotifications,
+            persistedShowOnlyForNotifications: model.showOnlyForNotifications,
+            exercisedHiddenOverlayHover: configuration.exerciseHiddenOverlayHover,
+            overlayPanelVisible: model.overlay.isOverlayPanelVisible,
+            bridgeReady: model.isBridgeReady,
+            bridgeSocketExists: fileManager.fileExists(
+                atPath: BridgeSocketLocation.currentURL().path
+            ),
             capturedAt: .now,
             launchToCaptureSeconds: captureSeconds,
             windows: windows,

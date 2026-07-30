@@ -180,7 +180,46 @@ def main() -> None:
     report_path = pathlib.Path(sys.argv[1])
     report = load_json(report_path)
     validate_runtime(report_path, report)
+
+    scenario = report.get("scenario")
+    if not isinstance(scenario, str) or not scenario:
+        fail("report is missing scenario")
+
+    notch_status = report.get("notchStatus")
+    island_surface = report.get("islandSurface") or ""
+
+    if report.get("startedBridge"):
+        if report.get("bridgeReady") is not True:
+            fail("bridge was requested but the model did not become ready")
+        if report.get("bridgeSocketExists") is not True:
+            fail("bridge was requested but bridge.sock was missing at capture time")
+
+    if (
+        report.get("showOnlyForNotifications")
+        and not report.get("exercisedHiddenOverlayHover")
+        and notch_status == "closed"
+    ):
+        overlay_windows = [
+            window for window in report.get("windows") or []
+            if window.get("kind") == "overlay"
+        ]
+        if overlay_windows:
+            fail("notification-only closed state still exposes an overlay window")
+        if report.get("overlayPanelVisible") is not False:
+            fail("notification-only closed state reports a visible overlay panel")
+        if scenario != "closed":
+            fail(f"unexpected hidden overlay scenario {scenario!r}")
+        if island_surface != "sessionList":
+            fail(f"expected hidden closed scenario to use sessionList, got {island_surface!r}")
+        print(
+            "closed+notificationOnly: notch=closed, panelVisible=false, "
+            f"bridgeReady={report.get('bridgeReady')}"
+        )
+        return
+
     overlay = find_overlay_window(report)
+    if report.get("overlayPanelVisible") is not True:
+        fail("visible overlay artifact disagrees with overlayPanelVisible")
 
     accessibility_path = overlay.get("accessibilityPath")
     if not accessibility_path:
@@ -199,13 +238,28 @@ def main() -> None:
     button_labels.update(summary.get("buttonLabels") or [])
     text_values.update(summary.get("textValues") or [])
 
-    scenario = report.get("scenario")
-    if not isinstance(scenario, str) or not scenario:
-        fail("report is missing scenario")
-
-    island_surface = report.get("islandSurface") or ""
-    notch_status = report.get("notchStatus")
     overlay_frame = overlay.get("frame") or {}
+
+    if report.get("exercisedHiddenOverlayHover"):
+        if report.get("showOnlyForNotifications") is not True:
+            fail("hidden-hover exercise did not enable notification-only visibility")
+        if scenario != "closed":
+            fail(f"hidden-hover exercise requires the closed scenario, got {scenario!r}")
+        if notch_status != "opened":
+            fail(f"hidden-hover exercise did not open the overlay: {notch_status!r}")
+        if island_surface != "sessionList":
+            fail(f"hidden-hover exercise opened an unexpected surface: {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(360, 500),
+            context="notification-only hover overlay frame",
+        )
+        print(
+            "closed+notificationOnly+hover: notch=opened, "
+            f"frame={overlay_frame.get('width')}x{overlay_frame.get('height')}"
+        )
+        return
 
     if scenario == "closed":
         if notch_status != "closed":

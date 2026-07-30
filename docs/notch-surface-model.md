@@ -17,12 +17,20 @@ Routing rules:
 
 Auto-expanded cards are temporary surfaces:
 
-- they auto-collapse after a short timeout
-- they also collapse when the pointer leaves the card after first hover
+- completion and failure cards auto-collapse after a short timeout
+- completion and failure cards also collapse when the pointer leaves after first hover
+- approval and question cards remain open until their actionable state resolves
 - they are not rendered as inline actions inside the session list
 
 This keeps the session list focused on navigation while question and approval
 flows use dedicated notification surfaces.
+
+The optional **Show only for notifications** behavior keeps the same logical
+`closed` state and global notch/top-bar trigger geometry, but orders the overlay
+panel out while closed. Hovering or clicking the trigger area orders the panel
+back in for manual browsing; leaving a non-actionable surface closes and orders
+it out again. The app process, bridge socket, hooks, and session monitoring stay
+running independently of panel visibility.
 
 The main DEV window is now a dedicated debug harness for these surfaces. It
 drives inline mock previews for the session list plus approval, question, and

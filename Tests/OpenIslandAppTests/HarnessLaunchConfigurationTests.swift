@@ -11,6 +11,8 @@ struct HarnessLaunchConfigurationTests {
         #expect(!configuration.presentOverlay)
         #expect(configuration.shouldStartBridge)
         #expect(configuration.shouldPerformBootAnimation)
+        #expect(configuration.showOnlyForNotifications == nil)
+        #expect(!configuration.exerciseHiddenOverlayHover)
         #expect(configuration.captureDelay == nil)
         #expect(configuration.autoExitAfter == nil)
         #expect(configuration.artifactDirectoryURL == nil)
@@ -24,6 +26,8 @@ struct HarnessLaunchConfigurationTests {
                 "OPEN_ISLAND_HARNESS_PRESENT_OVERLAY": "true",
                 "OPEN_ISLAND_HARNESS_START_BRIDGE": "no",
                 "OPEN_ISLAND_HARNESS_BOOT_ANIMATION": "off",
+                "OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS": "yes",
+                "OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER": "1",
                 "OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS": "1.5",
                 "OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS": "2.5",
                 "OPEN_ISLAND_HARNESS_ARTIFACT_DIR": "/tmp/open-island-artifacts",
@@ -34,6 +38,8 @@ struct HarnessLaunchConfigurationTests {
         #expect(configuration.presentOverlay)
         #expect(!configuration.shouldStartBridge)
         #expect(!configuration.shouldPerformBootAnimation)
+        #expect(configuration.showOnlyForNotifications == true)
+        #expect(configuration.exerciseHiddenOverlayHover)
         #expect(configuration.captureDelay == 1.5)
         #expect(configuration.autoExitAfter == 2.5)
         #expect(configuration.artifactDirectoryURL?.path == "/tmp/open-island-artifacts")

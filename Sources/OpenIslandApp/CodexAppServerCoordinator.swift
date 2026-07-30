@@ -115,7 +115,7 @@ final class CodexAppServerCoordinator {
 
     // MARK: - Notification handling
 
-    private func handleNotification(_ notification: CodexAppServerNotification) {
+    func handleNotification(_ notification: CodexAppServerNotification) {
         switch notification {
         case .threadStarted(let thread):
             guard !thread.ephemeral else { return }
@@ -160,24 +160,25 @@ final class CodexAppServerCoordinator {
                 }
             case .idle:
                 // Idle means "between turns" in the same thread — the thread
-                // is still open.  Only `thread/closed` truly ends a session.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
+                // is still open. Emit a turn-level completion so the change is
+                // notification-worthy; only `thread/closed` sets isSessionEnd.
+                onEvent?(.sessionCompleted(
+                    SessionCompleted(
                         sessionID: threadId,
-                        summary: "Idle.",
-                        phase: .completed,
+                        summary: "Turn completed.",
                         timestamp: .now
                     )
                 ))
             case .systemError:
                 // Quota limits and other hard failures can leave the thread in
-                // systemError without a turn/completed notification. Mark the
-                // turn as finished so the island does not stay stuck running.
-                onEvent?(.activityUpdated(
-                    SessionActivityUpdated(
+                // systemError without a turn/completed notification. Emit the
+                // same turn-level completion event used by hook integrations
+                // so the failure reaches the notification surface without
+                // marking the reusable Codex thread itself as ended.
+                onEvent?(.sessionCompleted(
+                    SessionCompleted(
                         sessionID: threadId,
                         summary: "Turn failed.",
-                        phase: .completed,
                         timestamp: .now
                     )
                 ))
@@ -213,10 +214,9 @@ final class CodexAppServerCoordinator {
             ))
 
         case .turnCompleted(let threadId, let turn):
-            // A turn completing doesn't end the thread — the user can send
-            // another message.  Use activityUpdated(phase: .completed) so the
-            // session stays visible as "Completed" rather than being torn
-            // down.  `thread/closed` is the authoritative end signal.
+            // A turn completion is notification-worthy but does not end the
+            // reusable Codex thread. SessionCompleted models that distinction
+            // through isSessionEnd, which remains nil until thread/closed.
             let summary: String
             switch turn.status {
             case .completed: summary = "Turn completed."
@@ -224,14 +224,26 @@ final class CodexAppServerCoordinator {
             case .failed: summary = "Turn failed."
             case .inProgress: summary = "Turn in progress."
             }
-            onEvent?(.activityUpdated(
-                SessionActivityUpdated(
-                    sessionID: threadId,
-                    summary: summary,
-                    phase: .completed,
-                    timestamp: .now
-                )
-            ))
+
+            if turn.status == .inProgress {
+                onEvent?(.activityUpdated(
+                    SessionActivityUpdated(
+                        sessionID: threadId,
+                        summary: summary,
+                        phase: .running,
+                        timestamp: .now
+                    )
+                ))
+            } else {
+                onEvent?(.sessionCompleted(
+                    SessionCompleted(
+                        sessionID: threadId,
+                        summary: summary,
+                        timestamp: .now,
+                        isInterrupt: turn.status == .interrupted
+                    )
+                ))
+            }
 
         case .unknown:
             break

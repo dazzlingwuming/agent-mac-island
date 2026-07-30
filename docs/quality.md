@@ -31,6 +31,8 @@ The smoke path is intentionally aimed at the repository executable, not `~/Appli
 - `OPEN_ISLAND_HARNESS_PRESENT_OVERLAY` mirrors the scenario onto the real island overlay
 - `OPEN_ISLAND_HARNESS_START_BRIDGE` skips live socket setup when disabled
 - `OPEN_ISLAND_HARNESS_BOOT_ANIMATION` disables the normal boot animation for deterministic runs
+- `OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS` exercises a process-local notification-only visibility override without changing the user's saved setting
+- `OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER` drives the production top-trigger hover path after a notification-only closed panel is ordered out
 - `OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS` controls when artifact capture runs after launch
 - `OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS` terminates the app automatically after the selected duration
 - `OPEN_ISLAND_HARNESS_ARTIFACT_DIR` selects the output directory for `report.json`, `timeline.json`, `runtime.log`, PNG captures, and `.ax.json` accessibility snapshots
@@ -54,6 +56,9 @@ For the deterministic scenario suite, the harness now performs these semantic ch
 - `questionCard`: overlay stays open and the three answer choices appear as buttons
 - `completionCard`: overlay stays open and exposes the `Done` completion copy
 - `longCompletionCard`: overlay stays open and exposes the long completion response text instead of collapsing away
+- `closed` with notification-only visibility: the logical surface stays closed while no overlay window or accessibility artifact remains on screen
+- `closed` with notification-only visibility and hidden-hover exercise: the existing top trigger orders the panel back in and opens the session list
+- `approvalCard` and `completionCard` with notification-only visibility: actionable and informational notifications still order the hidden panel back in
 
 ## Evidence Expectations
 

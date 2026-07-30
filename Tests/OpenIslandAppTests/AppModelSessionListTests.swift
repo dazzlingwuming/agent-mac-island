@@ -26,8 +26,26 @@ struct AppModelSessionListTests {
             "appearance.island.v8.topBar.completedStaleThreshold",
             "app.suppressFrontmostNotifications",
             "feature.completionReply.enabled",
+            "overlay.showOnlyForNotifications",
             "overlay.sound.muted",
         ].forEach(UserDefaults.standard.removeObject(forKey:))
+    }
+
+    @Test
+    func showOnlyForNotificationsDefaultsOffAndPersists() {
+        let defaultsKey = "overlay.showOnlyForNotifications"
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+        defer { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+
+        let initialModel = AppModel()
+        #expect(!initialModel.showOnlyForNotifications)
+
+        initialModel.showOnlyForNotifications = true
+        #expect(UserDefaults.standard.bool(forKey: defaultsKey))
+
+        let restoredModel = AppModel()
+        #expect(restoredModel.showOnlyForNotifications)
+        #expect(restoredModel.overlay.showOnlyForNotifications)
     }
 
     @Test
@@ -714,6 +732,83 @@ struct AppModelSessionListTests {
         #expect(model.notchStatus == .opened)
         #expect(model.notchOpenReason == .click)
         #expect(model.islandSurface == .sessionList())
+    }
+
+    @Test
+    func notificationOnlyModeCollapsesClickedSessionListOnPointerExit() {
+        let model = AppModel()
+        model.overlay.showOnlyForNotifications = true
+        model.notchStatus = .opened
+        model.notchOpenReason = .click
+        model.islandSurface = .sessionList()
+
+        #expect(model.shouldAutoCollapseOnMouseLeave)
+
+        model.notePointerInsideIslandSurface()
+        model.handlePointerExitedIslandSurface()
+
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+        #expect(model.islandSurface == .sessionList())
+    }
+
+    @Test
+    func notificationOnlyModeKeepsApprovalVisibleUntilResolved() {
+        let model = AppModel()
+        model.overlay.showOnlyForNotifications = true
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "approval-session",
+                    title: "Codex · approval",
+                    tool: .codex,
+                    attachmentState: .attached,
+                    phase: .waitingForApproval,
+                    summary: "Approve command",
+                    updatedAt: .now,
+                    permissionRequest: PermissionRequest(
+                        title: "Approve command",
+                        summary: "Allow this command?",
+                        affectedPath: "/tmp/project"
+                    )
+                ),
+            ]
+        )
+
+        model.notchOpen(
+            reason: .notification,
+            surface: .sessionList(actionableSessionID: "approval-session")
+        )
+
+        #expect(!model.shouldAutoCollapseOnMouseLeave)
+        #expect(!model.hasPendingNotificationAutoCollapse)
+
+        model.expandNotificationToSessionList()
+        #expect(model.notchOpenReason == .click)
+        #expect(!model.shouldAutoCollapseOnMouseLeave)
+
+        model.notePointerInsideIslandSurface()
+        model.handlePointerExitedIslandSurface()
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .click)
+
+        model.applyTrackedEvent(
+            .actionableStateResolved(
+                ActionableStateResolved(
+                    sessionID: "approval-session",
+                    summary: "Permission approved.",
+                    timestamp: .now
+                )
+            ),
+            updateLastActionMessage: false
+        )
+
+        #expect(model.islandSurface == .sessionList())
+        #expect(model.shouldAutoCollapseOnMouseLeave)
+
+        model.handlePointerExitedIslandSurface()
+        #expect(model.notchStatus == .closed)
     }
 
     @Test
