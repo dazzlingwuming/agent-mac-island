@@ -346,6 +346,17 @@ extension AgentSession {
             && referenceDate.timeIntervalSince(islandActivityDate) >= threshold
     }
 
+    /// Shared definition for the low-priority idle projection used by the
+    /// overview, grouped list, and manual cleanup eligibility.
+    func isIdleForIsland(
+        at referenceDate: Date,
+        threshold: TimeInterval = Self.staleCompletedDisplayThreshold
+    ) -> Bool {
+        guard phase == .completed else { return false }
+        return isStaleCompletedForIsland(at: referenceDate, threshold: threshold)
+            || islandPresence(at: referenceDate) == .inactive
+    }
+
     private var spotlightRunningActivityText: String? {
         guard let currentTool = currentToolName?.trimmedForSurface,
               !currentTool.isEmpty else {

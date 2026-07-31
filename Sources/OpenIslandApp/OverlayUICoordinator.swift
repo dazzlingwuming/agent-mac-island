@@ -591,6 +591,10 @@ final class OverlayUICoordinator {
         overlayPanelController.exerciseHiddenOverlayHoverForHarness()
     }
 
+    func exerciseHiddenOverlayClickForHarness() {
+        overlayPanelController.exerciseHiddenOverlayClickForHarness()
+    }
+
     func exercisePointerExitAutoHideForHarness() {
         notePointerInsideIslandSurface()
         handlePointerExitedIslandSurface()

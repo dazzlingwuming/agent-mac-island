@@ -26,6 +26,14 @@ OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS="1" \
 OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$hidden_scenario_dir" \
 zsh "$repo_root/scripts/smoke-dev-app.sh"
 
+ignored_click_scenario_dir="$base_dir/notificationOnlyClickIgnored"
+echo "Running smoke scenario 'notificationOnlyClickIgnored'"
+OPEN_ISLAND_HARNESS_SCENARIO="closed" \
+OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS="1" \
+OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_CLICK="1" \
+OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$ignored_click_scenario_dir" \
+zsh "$repo_root/scripts/smoke-dev-app.sh"
+
 pending_hover_scenario_dir="$base_dir/notificationOnlyHoverPending"
 echo "Running smoke scenario 'notificationOnlyHoverPending'"
 OPEN_ISLAND_HARNESS_SCENARIO="closed" \
@@ -42,8 +50,8 @@ echo "Running smoke scenario 'notificationOnlyHover'"
 OPEN_ISLAND_HARNESS_SCENARIO="closed" \
 OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS="1" \
 OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER="1" \
-OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS="2.75" \
-OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="3.5" \
+OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS="1.75" \
+OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="2.5" \
 OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$hover_scenario_dir" \
 zsh "$repo_root/scripts/smoke-dev-app.sh"
 
@@ -76,6 +84,13 @@ for scenario in approvalCard completionCard; do
     OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$notification_scenario_dir" \
     zsh "$repo_root/scripts/smoke-dev-app.sh"
 done
+
+idle_cleanup_scenario_dir="$base_dir/idleSessionCleanup"
+echo "Running smoke scenario 'idleSessionCleanup'"
+OPEN_ISLAND_HARNESS_SCENARIO="sessionList" \
+OPEN_ISLAND_HARNESS_EXERCISE_IDLE_SESSION_CLEANUP="1" \
+OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$idle_cleanup_scenario_dir" \
+zsh "$repo_root/scripts/smoke-dev-app.sh"
 
 echo "All smoke scenarios passed"
 echo "Artifacts written to $base_dir"

@@ -46,11 +46,15 @@ final class AppModel {
     var state = SessionState() {
         didSet {
             _cachedSessionBuckets = nil
+            reconcileIdleSessionDismissals()
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
         }
     }
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
+    @ObservationIgnored private let idleSessionDismissalStore: IdleSessionDismissalStore
+    @ObservationIgnored private var idleSessionDismissals: [String: IdleSessionDismissalRecord]
+    private(set) var idleSessionDismissalRevision: UInt64 = 0
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
     /// closed-island's right-slot surfaced set. Drives the grid's display
@@ -595,7 +599,8 @@ final class AppModel {
         },
         isNotificationSessionAlreadyFrontmost: @escaping @Sendable (AgentSession) async -> Bool = { session in
             await ForegroundTerminalSessionProbe().matches(session: session)
-        }
+        },
+        idleSessionDismissalStore: IdleSessionDismissalStore = IdleSessionDismissalStore()
     ) {
         let bridgeSocketURL = BridgeSocketLocation.currentURL()
         self.bridgeSocketURL = bridgeSocketURL
@@ -603,6 +608,8 @@ final class AppModel {
         self.bridgeClient = LocalBridgeClient(socketURL: bridgeSocketURL)
         self.terminalJumpAction = terminalJumpAction
         self.isNotificationSessionAlreadyFrontmost = isNotificationSessionAlreadyFrontmost
+        self.idleSessionDismissalStore = idleSessionDismissalStore
+        self.idleSessionDismissals = (try? idleSessionDismissalStore.load()) ?? [:]
         UserDefaults.standard.register(defaults: [
             Self.showDockIconDefaultsKey: true,
             Self.hapticFeedbackEnabledDefaultsKey: false,
@@ -727,7 +734,8 @@ final class AppModel {
     }
 
     var allSessions: [AgentSession] {
-        state.sessions
+        _ = idleSessionDismissalRevision
+        return state.sessions.filter { !isDismissedIdleSession($0) }
     }
 
     /// Measured by SwiftUI GeometryReader in notification mode. Used by panel controller for sizing.
@@ -822,11 +830,10 @@ final class AppModel {
             ("running", "island.section.inProgress", { $0.phase == .running }),
             ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
-                    && !session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                    && !session.isIdleForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
             ("idle", "island.section.idle", { [completedStaleThreshold] session in
-                session.phase == .completed
-                    && session.isStaleCompletedForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                session.isIdleForIsland(at: .now, threshold: completedStaleThreshold.seconds)
             }),
         ]
 
@@ -984,7 +991,13 @@ final class AppModel {
     }
 
     var focusedSession: AgentSession? {
-        state.session(id: selectedSessionID) ?? surfacedSessions.first ?? state.activeActionableSession ?? state.sessions.first
+        if let selected = state.session(id: selectedSessionID),
+           !isDismissedIdleSession(selected) {
+            return selected
+        }
+        return surfacedSessions.first
+            ?? state.activeActionableSession
+            ?? allSessions.first
     }
 
     var activeIslandCardSession: AgentSession? {
@@ -996,7 +1009,7 @@ final class AppModel {
     }
 
     var hasAnySession: Bool {
-        !sessions.isEmpty
+        !allSessions.isEmpty
     }
 
     var hasCodexSession: Bool {
@@ -1430,6 +1443,48 @@ final class AppModel {
         synchronizeSelection()
     }
 
+    func canClearIdleSessionRecord(
+        _ session: AgentSession,
+        at referenceDate: Date = .now
+    ) -> Bool {
+        !session.isRemote
+            && !session.isSubagentSession
+            && session.isIdleForIsland(
+                at: referenceDate,
+                threshold: completedStaleThreshold.seconds
+            )
+            && !isDismissedIdleSession(session)
+    }
+
+    func clearableIdleSessionRecordCount(at referenceDate: Date = .now) -> Int {
+        state.sessions.filter { canClearIdleSessionRecord($0, at: referenceDate) }.count
+    }
+
+    @discardableResult
+    func clearIdleSessionRecord(_ sessionID: String, at referenceDate: Date = .now) -> Bool {
+        guard let session = state.session(id: sessionID),
+              canClearIdleSessionRecord(session, at: referenceDate) else {
+            return false
+        }
+
+        return persistIdleSessionDismissals(
+            adding: [IdleSessionDismissalRecord(session: session)],
+            successMessage: lang.t("island.idleCleanup.clearedOne")
+        )
+    }
+
+    @discardableResult
+    func clearAllIdleSessionRecords(at referenceDate: Date = .now) -> Int {
+        let sessions = state.sessions.filter { canClearIdleSessionRecord($0, at: referenceDate) }
+        guard !sessions.isEmpty else { return 0 }
+
+        let records = sessions.map { IdleSessionDismissalRecord(session: $0) }
+        let message = lang.t("island.idleCleanup.clearedCount", records.count)
+        return persistIdleSessionDismissals(adding: records, successMessage: message)
+            ? records.count
+            : 0
+    }
+
     func answerQuestion(for sessionID: String, answer: QuestionPromptResponse) {
         guard let session = state.session(id: sessionID) else {
             return
@@ -1623,7 +1678,7 @@ final class AppModel {
         guard let selectedSessionID,
               surfacedIDs.contains(selectedSessionID),
               state.session(id: selectedSessionID) != nil else {
-            self.selectedSessionID = surfacedSessions.first?.id ?? state.sessions.first?.id
+            self.selectedSessionID = surfacedSessions.first?.id ?? allSessions.first?.id
             return
         }
     }
@@ -1689,21 +1744,24 @@ final class AppModel {
     }
 
     private func computeSessionBuckets() -> (primary: [AgentSession], overflow: [AgentSession]) {
+        _ = idleSessionDismissalRevision
         let now = Date.now
-        let rankedSessions = state.sessions.sorted { lhs, rhs in
-            let lhsScore = displayPriority(for: lhs, now: now)
-            let rhsScore = displayPriority(for: rhs, now: now)
+        let rankedSessions = state.sessions
+            .filter { !isDismissedIdleSession($0) }
+            .sorted { lhs, rhs in
+                let lhsScore = displayPriority(for: lhs, now: now)
+                let rhsScore = displayPriority(for: rhs, now: now)
 
-            if lhsScore == rhsScore {
-                if lhs.islandActivityDate == rhs.islandActivityDate {
-                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                if lhsScore == rhsScore {
+                    if lhs.islandActivityDate == rhs.islandActivityDate {
+                        return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                    }
+
+                    return lhs.islandActivityDate > rhs.islandActivityDate
                 }
 
-                return lhs.islandActivityDate > rhs.islandActivityDate
+                return lhsScore > rhsScore
             }
-
-            return lhsScore > rhsScore
-        }
 
         var primary: [AgentSession] = []
         var claimedLiveAttachmentKeys: Set<String> = []
@@ -1723,6 +1781,64 @@ final class AppModel {
         let primaryIDs = Set(primary.map(\.id))
         let overflow = rankedSessions.filter { !primaryIDs.contains($0.id) && !$0.isSubagentSession }
         return (primary, overflow)
+    }
+
+    private func isDismissedIdleSession(_ session: AgentSession) -> Bool {
+        idleSessionDismissals[session.id]?.hides(session) == true
+    }
+
+    private func reconcileIdleSessionDismissals() {
+        let resumedIDs = idleSessionDismissals.compactMap { sessionID, record -> String? in
+            guard let session = state.session(id: sessionID),
+                  !record.hides(session) else {
+                return nil
+            }
+            return sessionID
+        }
+        guard !resumedIDs.isEmpty else { return }
+
+        var updated = idleSessionDismissals
+        resumedIDs.forEach { updated.removeValue(forKey: $0) }
+
+        do {
+            try idleSessionDismissalStore.save(updated)
+            idleSessionDismissals = updated
+            idleSessionDismissalRevision &+= 1
+        } catch {
+            lastActionMessage = lang.t(
+                "island.idleCleanup.persistFailed",
+                error.localizedDescription
+            )
+        }
+    }
+
+    private func persistIdleSessionDismissals(
+        adding records: [IdleSessionDismissalRecord],
+        successMessage: String
+    ) -> Bool {
+        var updated = idleSessionDismissals
+        records.forEach { updated[$0.sessionID] = $0 }
+
+        do {
+            try idleSessionDismissalStore.save(updated)
+            idleSessionDismissals = updated
+            _cachedSessionBuckets = nil
+            idleSessionDismissalRevision &+= 1
+            lastActionMessage = successMessage
+
+            let visibleIDs = Set(surfacedSessions.map(\.id))
+            if let selectedSessionID, !visibleIDs.contains(selectedSessionID) {
+                self.selectedSessionID = surfacedSessions.first?.id
+            }
+            refreshOverlayPlacementIfVisible()
+            return true
+        } catch {
+            lastActionMessage = lang.t(
+                "island.idleCleanup.persistFailed",
+                error.localizedDescription
+            )
+            return false
+        }
     }
 
     private func displayPriority(for session: AgentSession, now: Date) -> Int {

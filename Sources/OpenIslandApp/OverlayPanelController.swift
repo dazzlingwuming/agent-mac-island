@@ -75,7 +75,13 @@ final class OverlayPanelController {
     /// An invisible trigger needs deliberate dwell time, while the visible
     /// closed pill keeps its established, responsive hover behavior.
     nonisolated static func hoverOpenDelay(showOnlyForNotifications: Bool) -> TimeInterval {
-        showOnlyForNotifications ? 2.0 : 0.15
+        showOnlyForNotifications ? 1.5 : 0.15
+    }
+
+    nonisolated static func shouldOpenClosedOverlayOnMouseDown(
+        showOnlyForNotifications: Bool
+    ) -> Bool {
+        !showOnlyForNotifications
     }
 
     func availableDisplayOptions() -> [OverlayDisplayOption] {
@@ -337,6 +343,13 @@ final class OverlayPanelController {
         handleMouseMoved(NSPoint(x: notchRect.midX, y: notchRect.midY))
     }
 
+    func exerciseHiddenOverlayClickForHarness() {
+        guard !notchRect.isEmpty else { return }
+        let triggerPoint = NSPoint(x: notchRect.midX, y: notchRect.midY)
+        handleMouseMoved(triggerPoint)
+        handleMouseDown(triggerPoint)
+    }
+
     private func handleMouseDown(_ screenLocation: NSPoint) {
         guard let model else { return }
 
@@ -344,6 +357,11 @@ final class OverlayPanelController {
 
         if model.notchStatus == .closed && inClosedSurfaceArea {
             cancelHoverOpenImmediately()
+            guard Self.shouldOpenClosedOverlayOnMouseDown(
+                showOnlyForNotifications: model.overlay.showOnlyForNotifications
+            ) else {
+                return
+            }
             model.notchOpen(reason: .click)
         } else if model.notchStatus == .opened {
             if !isPointInExpandedArea(screenLocation) {
@@ -412,8 +430,8 @@ final class OverlayPanelController {
         )
     }
 
-    /// Cancel without grace period — used for click-to-open where the
-    /// hover timer must not fire after the click already opened the panel.
+    /// Cancel without grace period so a closed-surface click cannot leave a
+    /// nearly-finished hover timer that opens immediately afterward.
     private func cancelHoverOpenImmediately() {
         hoverCancelGrace?.cancel()
         hoverCancelGrace = nil

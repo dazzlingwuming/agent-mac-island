@@ -22,7 +22,7 @@
 "settings.general.behavior" = "行為";
 "settings.general.hideFullscreen" = "全螢幕時隱藏";
 "settings.general.showOnlyForNotifications" = "自動隱藏（懸停或通知時顯示）";
-"settings.general.autoHideDescription" = "滑鼠停留在螢幕頂部中央約 2 秒即可開啟。";
+"settings.general.autoHideDescription" = "滑鼠停留在螢幕頂部中央約 1.5 秒即可開啟；點擊該區域不會喚醒。";
 "settings.general.autoCollapse" = "滑鼠離開時自動收起";
 "settings.general.showDockIcon" = "在 Dock 中顯示圖示";
 "settings.general.hapticFeedback" = "懸停時震動回饋";
@@ -200,6 +200,15 @@
 "island.showAll" = "顯示全部 %lld 個工作階段";
 "island.collapseList" = "收起清單";
 "island.usageWaiting" = "等待用量資料";
+"island.session.dismiss" = "關閉工作階段";
+"island.idleCleanup.button" = "清理閒置記錄（%lld）";
+"island.idleCleanup.rowAction" = "移除這筆閒置記錄";
+"island.idleCleanup.confirmTitle" = "清理 %lld 筆本機閒置記錄？";
+"island.idleCleanup.confirmAction" = "清理記錄";
+"island.idleCleanup.confirmMessage" = "只會從 Open Island 中移除這些記錄，不會刪除原始 Agent 工作階段或終止任何程序。工作階段有新活動時會自動重新顯示。";
+"island.idleCleanup.clearedOne" = "已清理 1 筆本機閒置記錄。";
+"island.idleCleanup.clearedCount" = "已清理 %lld 筆本機閒置記錄。";
+"island.idleCleanup.persistFailed" = "無法儲存閒置記錄清理狀態：%@";
 
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "請求工具權限";

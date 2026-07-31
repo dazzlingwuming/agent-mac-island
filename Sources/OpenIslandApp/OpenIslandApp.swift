@@ -3,10 +3,26 @@ import SwiftUI
 
 @MainActor
 final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
-    let model = AppModel()
-    private let harnessLaunchConfiguration = HarnessLaunchConfiguration()
+    let model: AppModel
+    private let harnessLaunchConfiguration: HarnessLaunchConfiguration
     private let launchedAt = Date()
     private lazy var harnessRuntimeMonitor = HarnessRuntimeMonitor(launchedAt: launchedAt)
+
+    override init() {
+        let configuration = HarnessLaunchConfiguration()
+        harnessLaunchConfiguration = configuration
+        if let artifactDirectoryURL = configuration.artifactDirectoryURL {
+            model = AppModel(
+                idleSessionDismissalStore: IdleSessionDismissalStore(
+                    fileURL: artifactDirectoryURL
+                        .appendingPathComponent("dismissed-idle-sessions.json")
+                )
+            )
+        } else {
+            model = AppModel()
+        }
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ProcessInfo.processInfo.disableAutomaticTermination(
@@ -48,9 +64,22 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
                     presentOverlay: harnessLaunchConfiguration.presentOverlay,
                     autoCollapseNotificationCards: true
                 )
+                if harnessLaunchConfiguration.exerciseIdleSessionCleanup {
+                    let eligibleCount = model.clearableIdleSessionRecordCount()
+                    let clearedCount = model.clearAllIdleSessionRecords()
+                    harnessRuntimeMonitor.recordMilestone(
+                        "idleSessionCleanupExercised",
+                        message: "\(clearedCount)/\(eligibleCount)"
+                    )
+                }
                 if harnessLaunchConfiguration.exerciseHiddenOverlayHover {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                         model.overlay.exerciseHiddenOverlayHoverForHarness()
+                    }
+                }
+                if harnessLaunchConfiguration.exerciseHiddenOverlayClick {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+                        model.overlay.exerciseHiddenOverlayClickForHarness()
                     }
                 }
                 if exercisesPointerExitAutoHide {
