@@ -228,6 +228,8 @@
 "question.otherPlaceholder" = "Type your answer…";
 "question.sendReply" = "Send reply";
 "question.sendAnswer" = "Send answer";
+"question.answerInSource" = "Answer this question in %@. The Island will close it automatically after Codex continues.";
+"question.returnToSource" = "Return to %@";
 
 /* Island Panel - Completion */
 "completion.done" = "Done";

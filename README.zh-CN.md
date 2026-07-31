@@ -51,6 +51,7 @@
 | 延迟隐藏 | 鼠标离开后等待约 **1.5 秒**再隐藏；在倒计时内重新进入会取消隐藏。 |
 | 跨 Space 和全屏 | 隐藏时不再对 `NSPanel` 调用 `orderOut`，而是保持窗口 ordered，并保留 `.canJoinAllSpaces` 与 `.fullScreenAuxiliary`，解决切换 Space 后无法再次唤醒的问题。 |
 | 通知自动出现 | Codex 完成、失败、请求权限、等待回答等事件可以在隐藏状态下自动显示。普通通知约 10 秒后关闭；权限和问题卡片在处理前不会自动消失。 |
+| Codex `/plan` 提问 | 识别 Codex rollout JSONL 中当前格式的 `request_user_input`，完整展示问题和选项，并提供“返回 Codex”。由于该事件没有回答 hook，答案仍在 Codex 中提交；Codex 继续运行后通知自动解除。 |
 | 本地空闲记录清理 | 空闲会话行增加单条清理入口，列表顶部增加批量清理入口。清理只影响 Island 的展示记录，不删除原始 Agent 会话，也不会终止进程。 |
 | 清理状态持久化 | 已清理的空闲记录在 App 重启后仍保持隐藏；同一会话出现新活动时会自动重新显示。 |
 | 三语文案 | 补充和调整 English、简体中文、繁体中文的自动隐藏与空闲清理文案。 |
@@ -67,6 +68,7 @@
 | 点击隐藏状态下的顶部中央 | 点击继续交给下面的应用，Island 不会出现。 |
 | Codex 完成或失败 | 通知自动出现，普通通知展示结束后自动隐藏。 |
 | Codex 请求权限或等待回答 | 通知持续显示，直到用户完成处理。 |
+| Codex `/plan` 调用 `request_user_input` | Island 完整显示问题与选项；点击“返回 Codex”并在那里作答，Codex 继续运行后通知自动解除。 |
 | 切换桌面、PyCharm 全屏或 Chrome 全屏 Space | 仍然可以在当前 Space 悬停唤醒或接收通知。 |
 | Island UI 已隐藏 | App、hooks、session monitoring 和 `OpenIsland/bridge.sock` 继续运行。 |
 

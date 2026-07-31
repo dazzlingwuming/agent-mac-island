@@ -390,6 +390,30 @@ def main() -> None:
         if selected_session_phase(report) != "waitingForAnswer":
             assert_contains_any(button_labels, ["Go to Terminal", "JWT tokens"], "questionCard button labels")
 
+    elif scenario == "codexQuestionCard":
+        if notch_status != "opened":
+            fail(f"expected opened notch for codexQuestionCard, got {notch_status!r}")
+        if not (island_surface.startswith("questionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected questionCard/actionable session surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(240, 460),
+            context="codexQuestionCard overlay frame",
+        )
+        assert_contains_any(
+            button_labels,
+            ["Return to Codex", "返回 Codex"],
+            "codexQuestionCard return button",
+        )
+        assert_contains_any(
+            text_values,
+            ["Leave blanks with flags", "missing field", "Codex"],
+            "codexQuestionCard question content",
+        )
+        if report.get("pendingNotificationAutoCollapse") is not False:
+            fail("Codex request_user_input notification scheduled an auto-collapse")
+
     elif scenario == "completionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for completionCard, got {notch_status!r}")

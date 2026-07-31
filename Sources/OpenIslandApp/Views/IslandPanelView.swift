@@ -1766,12 +1766,23 @@ private struct IslandSessionRow: View {
 
     // MARK: - Question action area
 
+    @ViewBuilder
     private var questionActionBody: some View {
-        StructuredQuestionPromptView(
-            prompt: session.questionPrompt,
-            lang: lang,
-            onAnswer: { onAnswer?($0) }
-        )
+        if let prompt = session.questionPrompt, !prompt.supportsInlineResponse {
+            SourceApplicationQuestionPromptView(
+                prompt: prompt,
+                sourceName: session.tool.displayName,
+                canOpenSource: session.jumpTarget != nil,
+                lang: lang,
+                onOpenSource: onJump
+            )
+        } else {
+            StructuredQuestionPromptView(
+                prompt: session.questionPrompt,
+                lang: lang,
+                onAnswer: { onAnswer?($0) }
+            )
+        }
     }
 
     // MARK: - Completion action area
@@ -2116,6 +2127,116 @@ private struct IslandSessionRow: View {
             .white.opacity(0.46)
         case .ready:
             presence == .inactive ? .white.opacity(0.46) : statusTint(for: presence)
+        }
+    }
+}
+
+private struct SourceApplicationQuestionPromptView: View {
+    let prompt: QuestionPrompt
+    let sourceName: String
+    let canOpenSource: Bool
+    var lang: LanguageManager = .shared
+    let onOpenSource: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if showsPromptTitle {
+                Text(prompt.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(IslandDesignPalette.Status.waitingForAnswer)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(prompt.questions.enumerated()), id: \.offset) { _, question in
+                    questionBody(question)
+                }
+            }
+
+            Text(lang.t("question.answerInSource", sourceName))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.48))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(lang.t("question.returnToSource", sourceName)) {
+                onOpenSource()
+            }
+            .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+            .disabled(!canOpenSource)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.white.opacity(0.05))
+        )
+    }
+
+    private var showsPromptTitle: Bool {
+        prompt.questions.count != 1 || prompt.questions.first?.question != prompt.title
+    }
+
+    private func questionBody(_ question: QuestionPromptItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if prompt.questions.count > 1, !question.header.isEmpty {
+                Text(question.header)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Text(question.question)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(V6Palette.paper.opacity(0.52))
+                            .frame(width: 22, height: 20)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Color.white.opacity(0.045))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.08))
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.label)
+                                .font(.system(size: 12.2, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.8))
+
+                            if !option.description.isEmpty {
+                                Text(option.description)
+                                    .font(.system(size: 10.5))
+                                    .foregroundStyle(.white.opacity(0.42))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.white.opacity(0.025))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(.white.opacity(0.06))
+                    )
+                }
+            }
         }
     }
 }

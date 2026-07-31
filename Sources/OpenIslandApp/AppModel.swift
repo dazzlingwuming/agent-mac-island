@@ -1337,6 +1337,11 @@ final class AppModel {
             return
         }
 
+        if session.questionPrompt?.supportsInlineResponse == false {
+            jumpToSession(session)
+            return
+        }
+
         send(
             .answerQuestion(sessionID: session.id, response: QuestionPromptResponse(answer: answer)),
             userMessage: "Sending answer \"\(answer)\" for \(session.title)."
@@ -1497,6 +1502,11 @@ final class AppModel {
             return
         }
 
+        if session.questionPrompt?.supportsInlineResponse == false {
+            jumpToSession(session)
+            return
+        }
+
         dismissNotificationSurfaceIfPresent(for: sessionID)
         state.answerQuestion(sessionID: session.id, response: answer)
         synchronizeSelection()
@@ -1637,7 +1647,8 @@ final class AppModel {
             return
         }
 
-        guard suppressFrontmostNotifications else {
+        let mustAnswerInSourceApplication = session.questionPrompt?.supportsInlineResponse == false
+        guard suppressFrontmostNotifications, !mustAnswerInSourceApplication else {
             presentNotificationSurface(surface)
             return
         }

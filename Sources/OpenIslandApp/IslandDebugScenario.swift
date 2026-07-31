@@ -18,6 +18,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case sessionList
     case approvalCard
     case questionCard
+    case codexQuestionCard
     case completionCard
     case longCompletionCard
 
@@ -33,6 +34,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Approval Card"
         case .questionCard:
             "Question Card"
+        case .codexQuestionCard:
+            "Codex Question Card"
         case .completionCard:
             "Completion Card"
         case .longCompletionCard:
@@ -50,6 +53,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded permission surface with approve and deny actions."
         case .questionCard:
             "Auto-expanded question surface with selectable answer buttons."
+        case .codexQuestionCard:
+            "Persistent Codex plan-mode question with read-only options and a return action."
         case .completionCard:
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
@@ -104,6 +109,19 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 title: title,
                 summary: summary,
                 previewHeight: 270,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .sessionList(actionableSessionID: session.id),
+                sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
+                selectedSessionID: session.id
+            )
+
+        case .codexQuestionCard:
+            let session = DebugSessionFactory.codexQuestionSession(now: now)
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 330,
                 notchStatus: .opened,
                 notchOpenReason: .notification,
                 islandSurface: .sessionList(actionableSessionID: session.id),
@@ -375,6 +393,55 @@ private enum DebugSessionFactory {
                 initialUserPrompt: "原产品看起来像是单 notch surface + 多 content surface。",
                 lastUserPrompt: "我们应该怎么做？",
                 lastAssistantMessage: "建议先把 approvalCard、questionCard、completionCard 拆成独立 surface。"
+            )
+        )
+    }
+
+    static func codexQuestionSession(now: Date) -> AgentSession {
+        AgentSession(
+            id: "session-codex-question",
+            title: "Codex · open-island",
+            tool: .codex,
+            origin: .demo,
+            attachmentState: .attached,
+            phase: .waitingForAnswer,
+            summary: "How should fields missing from the source PI be handled?",
+            updatedAt: now.addingTimeInterval(-12),
+            questionPrompt: QuestionPrompt(
+                title: "How should fields missing from the source PI be handled?",
+                questions: [
+                    QuestionPromptItem(
+                        question: "How should fields missing from the source PI be handled?",
+                        header: "Missing fields",
+                        options: [
+                            QuestionOption(
+                                label: "Leave blanks with flags",
+                                description: "Generate the draft and mark each missing field with a reason."
+                            ),
+                            QuestionOption(
+                                label: "Require manual completion",
+                                description: "Pause until every required field is supplied."
+                            ),
+                            QuestionOption(
+                                label: "Use approved historical values",
+                                description: "Suggest prior values but require confirmation before writing."
+                            ),
+                        ]
+                    )
+                ],
+                responseChannel: .sourceApplication
+            ),
+            jumpTarget: JumpTarget(
+                terminalApp: "Codex",
+                workspaceName: "open-island",
+                paneTitle: "Codex · open-island",
+                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                terminalSessionID: "codex-question"
+            ),
+            codexMetadata: CodexSessionMetadata(
+                initialUserPrompt: "Please verify the source PI before generating the draft.",
+                lastUserPrompt: "Use /plan and ask me before filling missing values.",
+                lastAssistantMessage: "I found one decision that requires your input."
             )
         )
     }

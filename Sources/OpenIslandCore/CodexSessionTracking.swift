@@ -45,6 +45,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
     public var updatedAt: Date
     public var jumpTarget: JumpTarget?
     public var codexMetadata: CodexSessionMetadata?
+    public var questionPrompt: QuestionPrompt?
 
     public init(
         sessionID: String,
@@ -55,7 +56,8 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         phase: SessionPhase,
         updatedAt: Date,
         jumpTarget: JumpTarget? = nil,
-        codexMetadata: CodexSessionMetadata? = nil
+        codexMetadata: CodexSessionMetadata? = nil,
+        questionPrompt: QuestionPrompt? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -66,6 +68,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         self.updatedAt = updatedAt
         self.jumpTarget = jumpTarget
         self.codexMetadata = codexMetadata
+        self.questionPrompt = questionPrompt
     }
 
     public init(session: AgentSession) {
@@ -78,7 +81,8 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: session.phase,
             updatedAt: session.updatedAt,
             jumpTarget: session.jumpTarget,
-            codexMetadata: session.codexMetadata
+            codexMetadata: session.codexMetadata,
+            questionPrompt: session.questionPrompt
         )
     }
 
@@ -92,6 +96,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: phase,
             summary: summary,
             updatedAt: updatedAt,
+            questionPrompt: questionPrompt,
             jumpTarget: jumpTarget,
             codexMetadata: codexMetadata
         )
@@ -112,6 +117,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         case updatedAt
         case jumpTarget
         case codexMetadata
+        case questionPrompt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -125,6 +131,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         jumpTarget = try container.decodeIfPresent(JumpTarget.self, forKey: .jumpTarget)
         codexMetadata = try container.decodeIfPresent(CodexSessionMetadata.self, forKey: .codexMetadata)
+        questionPrompt = try container.decodeIfPresent(QuestionPrompt.self, forKey: .questionPrompt)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -138,6 +145,7 @@ public struct CodexTrackedSessionRecord: Equatable, Codable, Sendable {
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(jumpTarget, forKey: .jumpTarget)
         try container.encodeIfPresent(codexMetadata, forKey: .codexMetadata)
+        try container.encodeIfPresent(questionPrompt, forKey: .questionPrompt)
     }
 }
 
@@ -650,7 +658,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             summary: summary,
             phase: snapshot.phase,
             updatedAt: updatedAt,
-            codexMetadata: metadata
+            codexMetadata: metadata,
+            questionPrompt: snapshot.questionPrompt
         )
     }
 
@@ -711,6 +720,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
     public var lastAssistantMessage: String?
     public var currentTool: String?
     public var currentCommandPreview: String?
+    public var questionPrompt: QuestionPrompt?
+    public var pendingQuestionCallID: String?
     public var isCompleted: Bool
     public var isInterrupted: Bool
 
@@ -723,6 +734,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         lastAssistantMessage: String? = nil,
         currentTool: String? = nil,
         currentCommandPreview: String? = nil,
+        questionPrompt: QuestionPrompt? = nil,
+        pendingQuestionCallID: String? = nil,
         isCompleted: Bool = false,
         isInterrupted: Bool = false
     ) {
@@ -734,6 +747,8 @@ public struct CodexRolloutSnapshot: Equatable, Sendable {
         self.lastAssistantMessage = lastAssistantMessage
         self.currentTool = currentTool
         self.currentCommandPreview = currentCommandPreview
+        self.questionPrompt = questionPrompt
+        self.pendingQuestionCallID = pendingQuestionCallID
         self.isCompleted = isCompleted
         self.isInterrupted = isInterrupted
     }
@@ -817,6 +832,8 @@ public enum CodexRolloutReducer {
         let oldPhase = oldSnapshot?.phase
         let oldCompleted = oldSnapshot?.isCompleted ?? false
         let oldInterrupted = oldSnapshot?.isInterrupted ?? false
+        let oldQuestionPrompt = oldSnapshot?.questionPrompt
+        let newQuestionPrompt = newSnapshot.questionPrompt
         let newSummary = newSnapshot.summary ?? oldSummary ?? "Codex updated the current turn."
 
         if newSnapshot.isCompleted {
@@ -832,6 +849,28 @@ public enum CodexRolloutReducer {
                     )
                 )
             }
+        } else if let newQuestionPrompt,
+                  oldQuestionPrompt != newQuestionPrompt
+                    || oldSnapshot?.pendingQuestionCallID != newSnapshot.pendingQuestionCallID {
+            events.append(
+                .questionAsked(
+                    QuestionAsked(
+                        sessionID: sessionID,
+                        prompt: newQuestionPrompt,
+                        timestamp: timestamp
+                    )
+                )
+            )
+        } else if oldQuestionPrompt != nil, newQuestionPrompt == nil {
+            events.append(
+                .actionableStateResolved(
+                    ActionableStateResolved(
+                        sessionID: sessionID,
+                        summary: newSummary,
+                        timestamp: timestamp
+                    )
+                )
+            )
         } else if oldSummary != newSummary || oldPhase != newSnapshot.phase {
             events.append(
                 .activityUpdated(
@@ -855,6 +894,7 @@ public enum CodexRolloutReducer {
     ) {
         switch payload["type"] as? String {
         case "task_started", "turn_started":
+            clearPendingQuestion(on: &snapshot)
             snapshot.phase = .running
             snapshot.isCompleted = false
             snapshot.isInterrupted = false
@@ -876,6 +916,7 @@ public enum CodexRolloutReducer {
         case "task_complete", "turn_complete":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            clearPendingQuestion(on: &snapshot)
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = false
@@ -889,6 +930,7 @@ public enum CodexRolloutReducer {
         case "turn_aborted":
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            clearPendingQuestion(on: &snapshot)
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = true
@@ -1086,11 +1128,21 @@ public enum CodexRolloutReducer {
                 return
             }
 
-            applyToolActivity(
-                toolName,
-                preview: commandPreview(for: toolName, payload: payload),
-                to: &snapshot
-            )
+            if toolName == "request_user_input" || toolName == "elicitation_request",
+               let callID = clipped(payload["call_id"] as? String),
+               let prompt = questionPrompt(from: payload) {
+                applyQuestionFunctionCall(
+                    callID: callID,
+                    prompt: prompt,
+                    to: &snapshot
+                )
+            } else {
+                applyToolActivity(
+                    toolName,
+                    preview: commandPreview(for: toolName, payload: payload),
+                    to: &snapshot
+                )
+            }
         case "local_shell_call":
             applyToolActivity(
                 "exec_command",
@@ -1118,7 +1170,9 @@ public enum CodexRolloutReducer {
         case "compaction", "compaction_summary", "context_compaction":
             applyToolActivity("context_compaction", preview: nil, to: &snapshot)
         case "function_call_output", "custom_tool_call_output", "tool_search_output":
-            applyThinking(to: &snapshot)
+            if !resolveQuestionFunctionCallIfNeeded(payload, in: &snapshot) {
+                applyThinking(to: &snapshot)
+            }
         default:
             return
         }
@@ -1136,7 +1190,7 @@ public enum CodexRolloutReducer {
         // After task_complete, trailing tool lifecycle records can still be
         // flushed into the JSONL. They may refresh updatedAt, but must not
         // reopen the completed turn or replace the final assistant summary.
-        guard !snapshot.isCompleted else {
+        guard !snapshot.isCompleted, snapshot.pendingQuestionCallID == nil else {
             return
         }
 
@@ -1149,7 +1203,7 @@ public enum CodexRolloutReducer {
     }
 
     private static func applyThinking(to snapshot: inout CodexRolloutSnapshot) {
-        guard !snapshot.isCompleted else {
+        guard !snapshot.isCompleted, snapshot.pendingQuestionCallID == nil else {
             return
         }
 
@@ -1166,6 +1220,7 @@ public enum CodexRolloutReducer {
             return
         }
 
+        clearPendingQuestion(on: &snapshot)
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .waitingForApproval
@@ -1187,6 +1242,49 @@ public enum CodexRolloutReducer {
         snapshot.summary = summary ?? "Answer needed."
     }
 
+    private static func applyQuestionFunctionCall(
+        callID: String,
+        prompt: QuestionPrompt,
+        to snapshot: inout CodexRolloutSnapshot
+    ) {
+        guard !snapshot.isCompleted else {
+            return
+        }
+
+        snapshot.currentTool = nil
+        snapshot.currentCommandPreview = nil
+        snapshot.questionPrompt = prompt
+        snapshot.pendingQuestionCallID = callID
+        snapshot.phase = .waitingForAnswer
+        snapshot.isCompleted = false
+        snapshot.isInterrupted = false
+        snapshot.summary = prompt.title
+    }
+
+    private static func resolveQuestionFunctionCallIfNeeded(
+        _ payload: [String: Any],
+        in snapshot: inout CodexRolloutSnapshot
+    ) -> Bool {
+        guard let callID = clipped(payload["call_id"] as? String),
+              callID == snapshot.pendingQuestionCallID else {
+            return false
+        }
+
+        clearPendingQuestion(on: &snapshot)
+        snapshot.currentTool = nil
+        snapshot.currentCommandPreview = nil
+        snapshot.phase = .running
+        snapshot.isCompleted = false
+        snapshot.isInterrupted = false
+        snapshot.summary = "Codex received your answer."
+        return true
+    }
+
+    private static func clearPendingQuestion(on snapshot: inout CodexRolloutSnapshot) {
+        snapshot.questionPrompt = nil
+        snapshot.pendingQuestionCallID = nil
+    }
+
     private static func applyUserMessage(
         _ message: String,
         timestamp: Date?,
@@ -1194,6 +1292,7 @@ public enum CodexRolloutReducer {
     ) {
         snapshot.initialUserPrompt = snapshot.initialUserPrompt ?? message
         snapshot.lastUserPrompt = message
+        clearPendingQuestion(on: &snapshot)
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .running
@@ -1212,11 +1311,23 @@ public enum CodexRolloutReducer {
         to snapshot: inout CodexRolloutSnapshot
     ) {
         snapshot.lastAssistantMessage = message
+
+        // A rollout may flush explanatory assistant text around an outstanding
+        // request_user_input call. Keep the actionable prompt authoritative
+        // until its matching function_call_output arrives.
+        if snapshot.pendingQuestionCallID != nil {
+            if let timestamp {
+                snapshot.updatedAt = timestamp
+            }
+            return
+        }
+
         snapshot.summary = message
 
         if !snapshot.isCompleted, isTerminalFailureMessage(message) {
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
+            clearPendingQuestion(on: &snapshot)
             snapshot.phase = .completed
             snapshot.isCompleted = true
             snapshot.isInterrupted = false
@@ -1315,6 +1426,57 @@ public enum CodexRolloutReducer {
         }
 
         return object
+    }
+
+    private static func questionPrompt(from payload: [String: Any]) -> QuestionPrompt? {
+        guard let arguments = decodedArguments(from: payload),
+              let rawQuestions = arguments["questions"] as? [[String: Any]] else {
+            return nil
+        }
+
+        let questions = rawQuestions.compactMap { rawQuestion -> QuestionPromptItem? in
+            guard let question = clipped(rawQuestion["question"] as? String, limit: 500),
+                  let rawOptions = rawQuestion["options"] as? [[String: Any]] else {
+                return nil
+            }
+
+            let options = rawOptions.compactMap { rawOption -> QuestionOption? in
+                guard let label = clipped(rawOption["label"] as? String, limit: 160) else {
+                    return nil
+                }
+
+                return QuestionOption(
+                    label: label,
+                    description: clipped(rawOption["description"] as? String, limit: 280) ?? ""
+                )
+            }
+
+            guard !options.isEmpty else {
+                return nil
+            }
+
+            return QuestionPromptItem(
+                question: question,
+                header: clipped(rawQuestion["header"] as? String, limit: 80) ?? "Question",
+                options: options,
+                multiSelect: (rawQuestion["multiSelect"] as? Bool)
+                    ?? (rawQuestion["multi_select"] as? Bool)
+                    ?? false
+            )
+        }
+
+        guard !questions.isEmpty else {
+            return nil
+        }
+
+        let title = questions.count == 1
+            ? questions[0].question
+            : "Codex has \(questions.count) questions for you."
+        return QuestionPrompt(
+            title: title,
+            questions: questions,
+            responseChannel: .sourceApplication
+        )
     }
 
     private static func localShellCommandPreview(from payload: [String: Any]) -> String? {
