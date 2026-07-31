@@ -14,6 +14,16 @@
 > 创作和维护。我只维护下方列出的修改内容。完整来源与授权说明见
 > [FORK_NOTICE.md](FORK_NOTICE.md)。
 
+## 界面预览
+
+**展开后的会话总览**
+
+![Agent Mac Island 在当前工作区顶部展开，显示运行中和空闲的 Codex 会话](images/session-overview.png)
+
+**本地空闲记录清理**
+
+![Agent Mac Island 的空闲会话列表，每条记录右侧都有单独的清理按钮](images/idle-record-cleanup.png)
+
 ## 我为什么修改这个版本
 
 上游 v1.1.6 在鼠标离开后，会把面板收成顶部的小胶囊，但小胶囊仍会一直显示，例如：

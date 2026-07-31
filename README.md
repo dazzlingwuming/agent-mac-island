@@ -14,6 +14,16 @@ notification or deliberate hover needs it.
 > I only maintain the changes described below. See
 > [FORK_NOTICE.md](FORK_NOTICE.md) for complete attribution.
 
+## Screenshots
+
+**Expanded session overview**
+
+![Agent Mac Island expanded above the current workspace, showing active and idle Codex sessions](images/session-overview.png)
+
+**Idle-record cleanup**
+
+![Idle session rows with individual cleanup buttons in Agent Mac Island](images/idle-record-cleanup.png)
+
 ## Why I Made This Version
 
 In the upstream v1.1.6 behavior, moving the pointer away collapses the panel
