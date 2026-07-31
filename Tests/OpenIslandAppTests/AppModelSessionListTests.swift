@@ -1327,7 +1327,8 @@ struct AppModelSessionListTests {
         model.notchStatus = .opened
         model.notchOpenReason = .notification
         model.islandSurface = surfaceA
-        model.measuredNotificationContentHeight = 320
+        let staleMeasurement: CGFloat = 9_999
+        model.measuredNotificationContentHeight = staleMeasurement
 
         model.notchClose()
 
@@ -1335,8 +1336,8 @@ struct AppModelSessionListTests {
         model.notchOpen(reason: .notification, surface: surfaceB)
 
         #expect(
-            model.measuredNotificationContentHeight == 0,
-            "Switching to a different session's card must clear the stale measurement from the previous session to prevent wrong initial panel sizing."
+            model.measuredNotificationContentHeight != staleMeasurement,
+            "Switching to a different session's card must discard the stale measurement. A synchronous measurement from the new card is also valid."
         )
     }
 
