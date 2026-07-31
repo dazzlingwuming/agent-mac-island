@@ -21,7 +21,8 @@
 "settings.general.automatic" = "Automatic";
 "settings.general.behavior" = "Behavior";
 "settings.general.hideFullscreen" = "Hide in fullscreen";
-"settings.general.showOnlyForNotifications" = "Show only for notifications";
+"settings.general.showOnlyForNotifications" = "Auto-hide (show on hover or notifications)";
+"settings.general.autoHideDescription" = "Keep the pointer at the top center of the screen for about 2 seconds to open.";
 "settings.general.autoCollapse" = "Auto-collapse on mouse exit";
 "settings.general.showDockIcon" = "Show icon in Dock";
 "settings.general.hapticFeedback" = "Haptic feedback on hover";

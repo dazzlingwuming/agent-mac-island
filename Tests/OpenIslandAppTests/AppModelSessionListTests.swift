@@ -735,7 +735,7 @@ struct AppModelSessionListTests {
     }
 
     @Test
-    func notificationOnlyModeCollapsesClickedSessionListOnPointerExit() {
+    func notificationOnlyModeDelaysCollapseAfterPointerExit() async throws {
         let model = AppModel()
         model.overlay.showOnlyForNotifications = true
         model.notchStatus = .opened
@@ -747,13 +747,79 @@ struct AppModelSessionListTests {
         model.notePointerInsideIslandSurface()
         model.handlePointerExitedIslandSurface()
 
+        #expect(model.notchStatus == .opened)
+        #expect(model.overlay.hasPendingPointerExitAutoHide)
+
+        try await Task.sleep(for: .milliseconds(1_600))
+
         #expect(model.notchStatus == .closed)
         #expect(model.notchOpenReason == nil)
         #expect(model.islandSurface == .sessionList())
+        #expect(!model.overlay.hasPendingPointerExitAutoHide)
     }
 
     @Test
-    func notificationOnlyModeKeepsApprovalVisibleUntilResolved() {
+    func notificationOnlyModeCancelsDelayedCollapseOnPointerReentry() async throws {
+        let model = AppModel()
+        model.overlay.showOnlyForNotifications = true
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+
+        model.notePointerInsideIslandSurface()
+        model.handlePointerExitedIslandSurface()
+
+        #expect(model.overlay.hasPendingPointerExitAutoHide)
+
+        model.notePointerInsideIslandSurface()
+
+        #expect(!model.overlay.hasPendingPointerExitAutoHide)
+        try await Task.sleep(for: .milliseconds(1_600))
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .hover)
+    }
+
+    @Test
+    func notificationInterruptsPendingPointerExitAutoHide() {
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.overlay.showOnlyForNotifications = true
+        model.notchStatus = .opened
+        model.notchOpenReason = .hover
+        model.islandSurface = .sessionList()
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "completed-session",
+                    title: "Codex · completed",
+                    tool: .codex,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Done",
+                    updatedAt: .now
+                )
+            ]
+        )
+
+        model.notePointerInsideIslandSurface()
+        model.handlePointerExitedIslandSurface()
+        #expect(model.overlay.hasPendingPointerExitAutoHide)
+
+        model.overlay.presentNotificationSurface(
+            .sessionList(actionableSessionID: "completed-session")
+        )
+
+        #expect(!model.overlay.hasPendingPointerExitAutoHide)
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(
+            model.islandSurface
+                == .sessionList(actionableSessionID: "completed-session")
+        )
+    }
+
+    @Test
+    func notificationOnlyModeKeepsApprovalVisibleUntilResolved() async throws {
         let model = AppModel()
         model.overlay.showOnlyForNotifications = true
         model.state = SessionState(
@@ -808,6 +874,10 @@ struct AppModelSessionListTests {
         #expect(model.shouldAutoCollapseOnMouseLeave)
 
         model.handlePointerExitedIslandSurface()
+        #expect(model.notchStatus == .opened)
+        #expect(model.overlay.hasPendingPointerExitAutoHide)
+
+        try await Task.sleep(for: .milliseconds(1_600))
         #expect(model.notchStatus == .closed)
     }
 

@@ -8,16 +8,28 @@ import OpenIslandCore
 final class OverlayUICoordinator {
 
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
+    static let pointerExitAutoHideDelay: TimeInterval = 1.5
 
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
     var islandSurface: IslandSurface = .sessionList()
     var isOverlayVisible: Bool { notchStatus != .closed }
-    var isOverlayPanelVisible: Bool { overlayPanelController.isVisible }
+    var isOverlayPanelVisible: Bool { overlayPanelController.isVisuallyVisible }
+    var isOverlayPanelOrdered: Bool { overlayPanelController.isOrdered }
+    var isOverlayPanelClickThrough: Bool { overlayPanelController.isClickThrough }
+    var overlayPanelAcceptsMouseMovedEvents: Bool {
+        overlayPanelController.acceptsMouseMovedEvents
+    }
+    var overlayPanelAlphaValue: CGFloat { overlayPanelController.alphaValue }
+    var isOverlayPanelAvailableAcrossSpaces: Bool {
+        overlayPanelController.isAvailableAcrossSpaces
+    }
+    var hasPendingHoverOpen: Bool { overlayPanelController.hasPendingHoverOpen }
 
     var showOnlyForNotifications = false {
         didSet {
             guard showOnlyForNotifications != oldValue else { return }
+            cancelPointerExitAutoHide()
             updateClosedOverlayVisibility()
         }
     }
@@ -60,13 +72,23 @@ final class OverlayUICoordinator {
     private var screenParametersObserver: NSObjectProtocol?
 
     @ObservationIgnored
+    private var activeSpaceObserver: NSObjectProtocol?
+
+    @ObservationIgnored
     private var overlayTransitionGeneration: UInt64 = 0
 
     @ObservationIgnored
     private var notificationAutoCollapseTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private var pointerExitAutoHideTask: Task<Void, Never>?
+
     var hasPendingNotificationAutoCollapse: Bool {
         notificationAutoCollapseTask != nil
+    }
+
+    var hasPendingPointerExitAutoHide: Bool {
+        pointerExitAutoHideTask != nil
     }
 
     @ObservationIgnored
@@ -112,14 +134,27 @@ final class OverlayUICoordinator {
     /// `CGDirectDisplayID` gets reused for a different physical display can
     /// silently route the island to the wrong screen.
     func startObservingDisplayChanges() {
-        guard screenParametersObserver == nil else { return }
-        screenParametersObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.refreshOverlayDisplayConfiguration()
+        if screenParametersObserver == nil {
+            screenParametersObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.refreshOverlayDisplayConfiguration()
+                }
+            }
+        }
+
+        if activeSpaceObserver == nil {
+            activeSpaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.reassertOverlayOnActiveSpace()
+                }
             }
         }
     }
@@ -128,6 +163,11 @@ final class OverlayUICoordinator {
         if let observer = screenParametersObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        if let observer = activeSpaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        notificationAutoCollapseTask?.cancel()
+        pointerExitAutoHideTask?.cancel()
     }
 
     // MARK: - Overlay transitions
@@ -146,7 +186,9 @@ final class OverlayUICoordinator {
             reason: reason,
             surface: surface,
             interactive: true,
-            beforeTransition: nil,
+            beforeTransition: { [weak self] in
+                self?.cancelPointerExitAutoHide()
+            },
             afterStateChange: { [weak self] in
                 guard let self else { return }
                 self.autoCollapseSurfaceHasBeenEntered = false
@@ -167,6 +209,7 @@ final class OverlayUICoordinator {
             surface: .sessionList(),
             interactive: false,
             beforeTransition: { [weak self] in
+                self?.cancelPointerExitAutoHide()
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
             },
@@ -246,10 +289,11 @@ final class OverlayUICoordinator {
 
     func ensureOverlayPanel() {
         guard let appModel else { return }
-        overlayPanelController.ensurePanel(
+        overlayPlacementDiagnostics = overlayPanelController.ensurePanel(
             model: appModel,
             preferredScreenID: preferredOverlayScreenID,
-            visible: notchStatus != .closed || !showOnlyForNotifications
+            visuallyVisible: notchStatus != .closed || !showOnlyForNotifications,
+            interactive: notchStatus == .opened
         )
     }
 
@@ -293,6 +337,16 @@ final class OverlayUICoordinator {
 
     func refreshOverlayPlacementIfVisible() {
         refreshOverlayPlacement()
+    }
+
+    private func reassertOverlayOnActiveSpace() {
+        guard let appModel else { return }
+        overlayPlacementDiagnostics = overlayPanelController.ensurePanel(
+            model: appModel,
+            preferredScreenID: preferredOverlayScreenID,
+            visuallyVisible: notchStatus != .closed || !showOnlyForNotifications,
+            interactive: notchStatus == .opened
+        )
     }
 
     // MARK: - Pointer tracking
@@ -340,6 +394,8 @@ final class OverlayUICoordinator {
     }
 
     func notePointerInsideIslandSurface() {
+        cancelPointerExitAutoHide()
+
         guard shouldTrackPointerInsideIslandSurface else {
             return
         }
@@ -369,7 +425,11 @@ final class OverlayUICoordinator {
             return
         }
 
-        notchClose()
+        if showOnlyForNotifications {
+            schedulePointerExitAutoHide()
+        } else {
+            notchClose()
+        }
     }
 
     // MARK: - Notification surfaces
@@ -378,6 +438,8 @@ final class OverlayUICoordinator {
         guard surface.isNotificationCard else {
             return
         }
+
+        cancelPointerExitAutoHide()
 
         guard !shouldPreserveCurrentNotificationSurface(against: surface) else {
             return
@@ -474,6 +536,40 @@ final class OverlayUICoordinator {
         }
     }
 
+    private func schedulePointerExitAutoHide() {
+        guard pointerExitAutoHideTask == nil else {
+            return
+        }
+
+        pointerExitAutoHideTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(
+                    for: .seconds(Self.pointerExitAutoHideDelay)
+                )
+            } catch {
+                return
+            }
+
+            guard let self else {
+                return
+            }
+
+            self.pointerExitAutoHideTask = nil
+            guard self.showOnlyForNotifications,
+                  self.shouldAutoCollapseOnMouseLeave,
+                  !self.isPointerInsideIslandSurface else {
+                return
+            }
+
+            self.notchClose()
+        }
+    }
+
+    private func cancelPointerExitAutoHide() {
+        pointerExitAutoHideTask?.cancel()
+        pointerExitAutoHideTask = nil
+    }
+
     var shouldDeferTimedNotificationAutoCollapse: Bool {
         isPointerInsideIslandSurface
             || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
@@ -495,7 +591,17 @@ final class OverlayUICoordinator {
         overlayPanelController.exerciseHiddenOverlayHoverForHarness()
     }
 
+    func exercisePointerExitAutoHideForHarness() {
+        notePointerInsideIslandSurface()
+        handlePointerExitedIslandSurface()
+    }
+
+    func exercisePointerReentryForHarness() {
+        notePointerInsideIslandSurface()
+    }
+
     func applyOverlayState(from snapshot: IslandDebugSnapshot, presentOverlay: Bool, autoCollapseNotificationCards: Bool) {
+        cancelPointerExitAutoHide()
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false
@@ -532,7 +638,8 @@ final class OverlayUICoordinator {
                 self.overlayPanelController.ensurePanel(
                     model: appModel,
                     preferredScreenID: self.preferredOverlayScreenID,
-                    visible: snapshot.notchStatus != .closed || !self.showOnlyForNotifications
+                    visuallyVisible: snapshot.notchStatus != .closed || !self.showOnlyForNotifications,
+                    interactive: false
                 )
                 self.refreshOverlayPlacement()
             }
@@ -550,11 +657,12 @@ final class OverlayUICoordinator {
             return
         }
 
-        guard !overlayPanelController.isVisible, let appModel else { return }
+        guard let appModel else { return }
         overlayPanelController.ensurePanel(
             model: appModel,
             preferredScreenID: preferredOverlayScreenID,
-            visible: true
+            visuallyVisible: true,
+            interactive: false
         )
     }
 

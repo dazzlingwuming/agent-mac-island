@@ -194,25 +194,58 @@ def main() -> None:
         if report.get("bridgeSocketExists") is not True:
             fail("bridge was requested but bridge.sock was missing at capture time")
 
-    if (
-        report.get("showOnlyForNotifications")
-        and not report.get("exercisedHiddenOverlayHover")
-        and notch_status == "closed"
-    ):
+    if report.get("overlayPanelAvailableAcrossSpaces") is not True:
+        fail("overlay panel is missing canJoinAllSpaces/fullScreenAuxiliary")
+    if report.get("overlayPanelOrdered") is not True:
+        fail("overlay panel was removed from the Window Server ordered set")
+
+    if report.get("overlayPanelVisible") is False:
+        if report.get("showOnlyForNotifications") is not True:
+            fail("default visibility mode unexpectedly hid the overlay panel")
+        if notch_status != "closed":
+            fail(f"hidden overlay has unexpected notch status {notch_status!r}")
+
         overlay_windows = [
             window for window in report.get("windows") or []
             if window.get("kind") == "overlay"
         ]
         if overlay_windows:
             fail("notification-only closed state still exposes an overlay window")
-        if report.get("overlayPanelVisible") is not False:
-            fail("notification-only closed state reports a visible overlay panel")
-        if scenario != "closed":
-            fail(f"unexpected hidden overlay scenario {scenario!r}")
+        if report.get("overlayPanelClickThrough") is not True:
+            fail("hidden overlay panel is not click-through")
+        if report.get("overlayPanelAcceptsMouseMovedEvents") is not False:
+            fail("hidden overlay panel still accepts mouse-moved events")
+        alpha = report.get("overlayPanelAlphaValue")
+        if not isinstance(alpha, (int, float)) or alpha > 0.001:
+            fail(f"hidden overlay alpha {alpha!r} is not transparent")
         if island_surface != "sessionList":
             fail(f"expected hidden closed scenario to use sessionList, got {island_surface!r}")
+
+        if report.get("expectedHiddenHoverAtCapture"):
+            if report.get("exercisedHiddenOverlayHover") is not True:
+                fail("pending hidden-hover capture did not exercise hover")
+            if report.get("pendingHoverOpen") is not True:
+                fail("2-second hover timer was not pending at the early capture")
+            context = "notificationOnlyHoverPending"
+        elif (
+            report.get("exercisedPointerExitAutoHide")
+            and not report.get("exercisedPointerExitAutoHideCancellation")
+        ):
+            if scenario != "sessionList":
+                fail(f"pointer-exit auto-hide requires sessionList, got {scenario!r}")
+            if report.get("pendingPointerExitAutoHide") is not False:
+                fail("1.5-second pointer-exit timer remained pending after capture")
+            context = "notificationOnlyAutoHide"
+        else:
+            if scenario != "closed":
+                fail(f"unexpected hidden overlay scenario {scenario!r}")
+            if report.get("pendingHoverOpen") is not False:
+                fail("idle hidden overlay unexpectedly has a pending hover timer")
+            context = "notificationOnlyHidden"
+
         print(
-            "closed+notificationOnly: notch=closed, panelVisible=false, "
+            f"{context}: notch=closed, visuallyVisible=false, ordered=true, "
+            "clickThrough=true, "
             f"bridgeReady={report.get('bridgeReady')}"
         )
         return
@@ -220,6 +253,14 @@ def main() -> None:
     overlay = find_overlay_window(report)
     if report.get("overlayPanelVisible") is not True:
         fail("visible overlay artifact disagrees with overlayPanelVisible")
+    alpha = report.get("overlayPanelAlphaValue")
+    if not isinstance(alpha, (int, float)) or alpha < 0.999:
+        fail(f"visible overlay alpha {alpha!r} is not opaque")
+    if notch_status == "opened":
+        if report.get("overlayPanelClickThrough") is not False:
+            fail("opened overlay panel is unexpectedly click-through")
+        if report.get("overlayPanelAcceptsMouseMovedEvents") is not True:
+            fail("opened overlay panel does not accept mouse-moved events")
 
     accessibility_path = overlay.get("accessibilityPath")
     if not accessibility_path:
@@ -239,6 +280,19 @@ def main() -> None:
     text_values.update(summary.get("textValues") or [])
 
     overlay_frame = overlay.get("frame") or {}
+
+    if report.get("exercisedPointerExitAutoHideCancellation"):
+        if report.get("showOnlyForNotifications") is not True:
+            fail("pointer-exit cancellation did not enable auto-hide mode")
+        if report.get("exercisedPointerExitAutoHide") is not True:
+            fail("pointer-exit cancellation did not first schedule auto-hide")
+        if scenario != "sessionList" or notch_status != "opened":
+            fail(
+                "pointer re-entry did not preserve the opened sessionList "
+                f"({scenario!r}, {notch_status!r})"
+            )
+        if report.get("pendingPointerExitAutoHide") is not False:
+            fail("pointer re-entry did not cancel the 1.5-second hide timer")
 
     if report.get("exercisedHiddenOverlayHover"):
         if report.get("showOnlyForNotifications") is not True:
@@ -306,6 +360,11 @@ def main() -> None:
             fail("missing required approval button label 'Deny'")
         if not ({"Allow", "Allow Once"} & button_labels) and selected_session_phase(report) != "waitingForApproval":
             fail("missing allow-style approval button label")
+        if (
+            report.get("showOnlyForNotifications")
+            and report.get("pendingNotificationAutoCollapse") is not False
+        ):
+            fail("actionable approval notification scheduled an auto-collapse")
 
     elif scenario == "questionCard":
         if notch_status != "opened":
@@ -334,6 +393,11 @@ def main() -> None:
         )
         if selected_session_phase(report) != "completed":
             assert_contains_any(text_values, ["Done", "hooks"], "completionCard text values")
+        if (
+            report.get("showOnlyForNotifications")
+            and report.get("pendingNotificationAutoCollapse") is not True
+        ):
+            fail("completion notification did not schedule its 10-second auto-collapse")
 
     elif scenario == "longCompletionCard":
         if notch_status != "opened":

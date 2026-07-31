@@ -110,6 +110,11 @@ struct OverlayPanelControllerTests {
         )
     }
 
+    @Test
+    func notificationOnlyPointerExitUsesOneAndAHalfSecondDelay() {
+        #expect(OverlayUICoordinator.pointerExitAutoHideDelay == 1.5)
+    }
+
     // MARK: - islandClosedHeight
 
     @Test

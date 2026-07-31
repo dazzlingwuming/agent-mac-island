@@ -21,7 +21,12 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             model.harnessRuntimeMonitor = harnessRuntimeMonitor
             harnessRuntimeMonitor.recordLog(model.lastActionMessage)
 
-            model.ignoresPointerExitDuringHarness = harnessLaunchConfiguration.scenario != nil
+            let exercisesPointerExitAutoHide =
+                harnessLaunchConfiguration.exercisePointerExitAutoHide
+                || harnessLaunchConfiguration.exercisePointerExitAutoHideCancellation
+            model.ignoresPointerExitDuringHarness =
+                harnessLaunchConfiguration.scenario != nil
+                && !exercisesPointerExitAutoHide
             model.disablesOverlayEventMonitoringDuringHarness = harnessLaunchConfiguration.scenario != nil
             if harnessLaunchConfiguration.scenario != nil,
                let showOnlyForNotifications =
@@ -40,17 +45,31 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
             if let scenario = harnessLaunchConfiguration.scenario {
                 model.loadDebugSnapshot(
                     scenario.snapshot(),
-                    presentOverlay: harnessLaunchConfiguration.presentOverlay
+                    presentOverlay: harnessLaunchConfiguration.presentOverlay,
+                    autoCollapseNotificationCards: true
                 )
                 if harnessLaunchConfiguration.exerciseHiddenOverlayHover {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
                         model.overlay.exerciseHiddenOverlayHoverForHarness()
                     }
                 }
+                if exercisesPointerExitAutoHide {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [self] in
+                        model.overlay.exercisePointerExitAutoHideForHarness()
+                    }
+                }
+                if harnessLaunchConfiguration.exercisePointerExitAutoHideCancellation {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [self] in
+                        model.overlay.exercisePointerReentryForHarness()
+                    }
+                }
             }
 
             // Hide all windows on launch — settings opens on demand only.
             OpenIslandAppDelegate.hideAllAppWindows()
+            // `hideAllAppWindows` deliberately leaves panels alone, but
+            // reasserting here also covers future launch-time window changes.
+            model.ensureOverlayPanel()
 
             harnessRuntimeMonitor.recordMilestone("bootstrapCompleted")
 
@@ -88,7 +107,7 @@ final class OpenIslandAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func hideAllAppWindows() {
-        for window in NSApp.windows {
+        for window in NSApp.windows where !(window is NSPanel) {
             window.orderOut(nil)
         }
     }
