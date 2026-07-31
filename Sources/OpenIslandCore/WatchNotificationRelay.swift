@@ -56,7 +56,7 @@ public final class WatchNotificationRelay: @unchecked Sendable {
             Self.logger.info("Pushed permissionRequested for session \(payload.sessionID)")
 
         case let .questionAsked(payload):
-            guard let session else { return }
+            guard let session, payload.prompt.supportsInlineResponse else { return }
             let requestID = payload.prompt.id.uuidString
             trackPendingRequest(requestID: requestID, sessionID: payload.sessionID, kind: .question)
 

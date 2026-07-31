@@ -9,6 +9,53 @@ import Testing
 /// the watch SSE stream stuck on stale "actionable" badges.
 struct WatchNotificationRelayTests {
     @Test
+    func sourceApplicationQuestionsAreNotRegisteredForRemoteAnswering() {
+        let relay = WatchNotificationRelay()
+        let session = AgentSession(
+            id: "codex-rollout-question",
+            title: "Codex · planning",
+            tool: .codex,
+            phase: .waitingForAnswer,
+            summary: "Choose a policy.",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        let externalPrompt = QuestionPrompt(
+            title: "Choose a policy.",
+            options: ["Draft first", "Require values"],
+            responseChannel: .sourceApplication
+        )
+
+        relay.notifyEvent(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: session.id,
+                    prompt: externalPrompt,
+                    timestamp: Date(timeIntervalSince1970: 1_001)
+                )
+            ),
+            session: session
+        )
+
+        #expect(relay.pendingRequestCountForTests(sessionID: session.id) == 0)
+
+        relay.notifyEvent(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: session.id,
+                    prompt: QuestionPrompt(
+                        title: "Bridge question",
+                        options: ["Yes", "No"]
+                    ),
+                    timestamp: Date(timeIntervalSince1970: 1_002)
+                )
+            ),
+            session: session
+        )
+
+        #expect(relay.pendingRequestCountForTests(sessionID: session.id) == 1)
+    }
+
+    @Test
     func resolvingActionableStateClearsAllPendingRequestsForSession() {
         let relay = WatchNotificationRelay()
         let session = AgentSession(

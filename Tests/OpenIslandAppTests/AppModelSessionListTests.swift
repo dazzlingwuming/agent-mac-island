@@ -686,6 +686,88 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func codexRolloutQuestionBypassesFrontmostSuppressionUntilMatchingAnswer() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let model = AppModel(
+            isNotificationSessionAlreadyFrontmost: { _ in true }
+        )
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = true
+        model.overlay.showOnlyForNotifications = true
+        model.notchStatus = .closed
+        model.notchOpenReason = nil
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "codex-plan-question",
+                    title: "Codex · planning",
+                    tool: .codex,
+                    origin: .live,
+                    attachmentState: .attached,
+                    phase: .running,
+                    summary: "Planning.",
+                    updatedAt: now,
+                    jumpTarget: JumpTarget(
+                        terminalApp: "Ghostty",
+                        workspaceName: "planning",
+                        paneTitle: "codex"
+                    )
+                ),
+            ]
+        )
+
+        model.applyTrackedEvent(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: "codex-plan-question",
+                    prompt: QuestionPrompt(
+                        title: "How should missing values be handled?",
+                        questions: [
+                            QuestionPromptItem(
+                                question: "How should missing values be handled?",
+                                header: "Missing values",
+                                options: [
+                                    QuestionOption(label: "Leave blank"),
+                                    QuestionOption(label: "Require values"),
+                                ]
+                            ),
+                        ],
+                        responseChannel: .sourceApplication
+                    ),
+                    timestamp: now.addingTimeInterval(1)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.islandSurface == .sessionList(actionableSessionID: "codex-plan-question"))
+        #expect(model.state.session(id: "codex-plan-question")?.phase == .waitingForAnswer)
+        #expect(model.state.session(id: "codex-plan-question")?.questionPrompt?.supportsInlineResponse == false)
+        #expect(!model.hasPendingNotificationAutoCollapse)
+
+        model.applyTrackedEvent(
+            .actionableStateResolved(
+                ActionableStateResolved(
+                    sessionID: "codex-plan-question",
+                    summary: "Codex received your answer.",
+                    timestamp: now.addingTimeInterval(2)
+                )
+            ),
+            updateLastActionMessage: false,
+            ingress: .rollout
+        )
+
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+        #expect(model.islandSurface == .sessionList())
+        #expect(model.state.session(id: "codex-plan-question")?.phase == .running)
+        #expect(model.state.session(id: "codex-plan-question")?.questionPrompt == nil)
+    }
+
+    @Test
     func hoverOpenedSessionListAutoCollapsesOnPointerExit() {
         let model = AppModel()
         model.notchStatus = .opened

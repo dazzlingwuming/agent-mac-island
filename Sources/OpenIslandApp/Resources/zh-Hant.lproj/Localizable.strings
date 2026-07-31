@@ -227,6 +227,8 @@
 "question.otherPlaceholder" = "輸入你的回答…";
 "question.sendReply" = "傳送回覆";
 "question.sendAnswer" = "提交答案";
+"question.answerInSource" = "請在 %@ 中回答。Codex 繼續執行後，靈動島會自動關閉這則提醒。";
+"question.returnToSource" = "返回 %@";
 
 /* Island Panel - Completion */
 "completion.done" = "完成";

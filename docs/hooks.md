@@ -62,6 +62,15 @@ The `CodexHookPayload` model and `BridgeServer` can parse richer events (`PreToo
 
 > **Note on file-edit coverage**: Codex file edits may use internal apply-patch paths that do not emit `PreToolUse` events. File-edit approval should not be treated as guaranteed `PreToolUse` coverage; the current reliable coverage is command/shell-level events, depending on Codex hook configuration.
 
+### Plan-mode questions
+
+Codex CLI does not expose `request_user_input` as a managed Open Island hook.
+Open Island detects these prompts from the session rollout JSONL instead. It
+shows the question and options as a persistent notification and provides a
+jump back to Codex; the answer must still be entered in Codex because no hook
+request is waiting for an Island response. The notification is resolved when
+the rollout records the matching `function_call_output`.
+
 ### Common payload fields
 
 | JSON key | Swift property | Description |

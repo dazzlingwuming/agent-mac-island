@@ -35,6 +35,20 @@ struct CodexSessionTrackingTests {
                     lastAssistantMessage: "Inspecting rollout watcher.",
                     currentTool: "exec_command",
                     currentCommandPreview: "git status -sb"
+                ),
+                questionPrompt: QuestionPrompt(
+                    title: "Which rollout should Codex inspect?",
+                    questions: [
+                        QuestionPromptItem(
+                            question: "Which rollout should Codex inspect?",
+                            header: "Rollout",
+                            options: [
+                                QuestionOption(label: "Current"),
+                                QuestionOption(label: "Archived"),
+                            ]
+                        ),
+                    ],
+                    responseChannel: .sourceApplication
                 )
             )
         ]
@@ -48,6 +62,8 @@ struct CodexSessionTrackingTests {
         #expect(reloaded.first?.session.codexMetadata?.lastUserPrompt == "Check the rollout watcher state.")
         #expect(reloaded.first?.session.origin == .live)
         #expect(reloaded.first?.session.attachmentState == .attached)
+        #expect(reloaded.first?.session.questionPrompt?.responseChannel == .sourceApplication)
+        #expect(reloaded.first?.session.questionPrompt?.supportsInlineResponse == false)
     }
 
     @Test
@@ -219,6 +235,95 @@ struct CodexSessionTrackingTests {
         #expect(finalEvents.contains(where: { $0.trackedSessionCompletion?.isInterrupt != true }))
         #expect(finalEvents.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentTool == nil }))
         #expect(finalEvents.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.currentCommandPreview == nil }))
+    }
+
+    @Test
+    func codexRolloutReducerTracksCurrentRequestUserInputShapeUntilMatchingOutput() throws {
+        let initialLines = [
+            rolloutLine(
+                timestamp: "2026-07-31T08:46:10.000Z",
+                type: "event_msg",
+                payload: [
+                    "type": "user_message",
+                    "message": "Prepare the first CI/PL draft.",
+                ]
+            ),
+        ]
+        let initialSnapshot = CodexRolloutReducer.snapshot(for: initialLines)
+        let questionLine = rolloutLine(
+            timestamp: "2026-07-31T08:46:13.994Z",
+            type: "response_item",
+            payload: [
+                "type": "function_call",
+                "name": "request_user_input",
+                "call_id": "call-question-1",
+                "arguments": requestUserInputArguments(),
+            ]
+        )
+        let questionSnapshot = CodexRolloutReducer.snapshot(for: initialLines + [questionLine])
+        let questionEvents = CodexRolloutReducer.events(
+            from: initialSnapshot,
+            to: questionSnapshot,
+            sessionID: "codex-session-question",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(questionSnapshot.phase == .waitingForAnswer)
+        #expect(questionSnapshot.pendingQuestionCallID == "call-question-1")
+        #expect(questionSnapshot.questionPrompt?.supportsInlineResponse == false)
+        #expect(questionSnapshot.questionPrompt?.questions.first?.header == "Missing fields")
+        #expect(questionSnapshot.questionPrompt?.questions.first?.options.map(\.label) == [
+            "Leave blank and flag",
+            "Require values first",
+            "Suggest historical values",
+        ])
+        #expect(questionSnapshot.questionPrompt?.questions.first?.options.first?.description == "Generate the draft and highlight missing cells.")
+
+        let questionEvent = try #require(questionEvents.compactMap(\.trackedQuestionAsked).first)
+        #expect(questionEvent.sessionID == "codex-session-question")
+        #expect(questionEvent.prompt.responseChannel == .sourceApplication)
+
+        let unrelatedOutputLine = rolloutLine(
+            timestamp: "2026-07-31T08:46:20.000Z",
+            type: "response_item",
+            payload: [
+                "type": "function_call_output",
+                "call_id": "call-unrelated",
+                "output": "done",
+            ]
+        )
+        let stillWaitingSnapshot = CodexRolloutReducer.snapshot(
+            for: initialLines + [questionLine, unrelatedOutputLine]
+        )
+        #expect(stillWaitingSnapshot.phase == .waitingForAnswer)
+        #expect(stillWaitingSnapshot.pendingQuestionCallID == "call-question-1")
+        #expect(stillWaitingSnapshot.questionPrompt != nil)
+
+        let answerLine = rolloutLine(
+            timestamp: "2026-07-31T08:48:33.218Z",
+            type: "response_item",
+            payload: [
+                "type": "function_call_output",
+                "call_id": "call-question-1",
+                "output": "{\"answers\":{\"missing_actual_policy\":{\"answers\":[\"Leave blank and flag\"]}}}",
+            ]
+        )
+        let resolvedSnapshot = CodexRolloutReducer.snapshot(
+            for: initialLines + [questionLine, unrelatedOutputLine, answerLine]
+        )
+        let resolvedEvents = CodexRolloutReducer.events(
+            from: stillWaitingSnapshot,
+            to: resolvedSnapshot,
+            sessionID: "codex-session-question",
+            transcriptPath: "/tmp/rollout.jsonl"
+        )
+
+        #expect(resolvedSnapshot.phase == .running)
+        #expect(resolvedSnapshot.pendingQuestionCallID == nil)
+        #expect(resolvedSnapshot.questionPrompt == nil)
+        #expect(resolvedEvents.contains(where: {
+            $0.trackedActionableResolution?.sessionID == "codex-session-question"
+        }))
     }
 
     @Test
@@ -1391,6 +1496,34 @@ private func sessionMetaLine(
     )
 }
 
+private func requestUserInputArguments() -> String {
+    let arguments: [String: Any] = [
+        "questions": [
+            [
+                "header": "Missing fields",
+                "id": "missing_actual_policy",
+                "options": [
+                    [
+                        "label": "Leave blank and flag",
+                        "description": "Generate the draft and highlight missing cells.",
+                    ],
+                    [
+                        "label": "Require values first",
+                        "description": "Block download until every value is entered.",
+                    ],
+                    [
+                        "label": "Suggest historical values",
+                        "description": "Require confirmation before writing suggestions.",
+                    ],
+                ],
+                "question": "How should the first draft handle missing shipment fields?",
+            ],
+        ],
+    ]
+    let data = try! JSONSerialization.data(withJSONObject: arguments, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
+}
+
 private extension AgentEvent {
     var trackedActivityUpdate: SessionActivityUpdated? {
         if case let .activityUpdated(payload) = self {
@@ -1410,6 +1543,22 @@ private extension AgentEvent {
 
     var trackedMetadataUpdate: SessionMetadataUpdated? {
         if case let .sessionMetadataUpdated(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var trackedQuestionAsked: QuestionAsked? {
+        if case let .questionAsked(payload) = self {
+            payload
+        } else {
+            nil
+        }
+    }
+
+    var trackedActionableResolution: ActionableStateResolved? {
+        if case let .actionableStateResolved(payload) = self {
             payload
         } else {
             nil

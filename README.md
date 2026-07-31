@@ -46,6 +46,7 @@ the Island notification-driven:
 | Delayed hide | After the pointer leaves, the Island waits about **1.5 seconds** before hiding. Re-entering during that delay cancels the hide. |
 | Cross-Space support | The `NSPanel` remains ordered with `.canJoinAllSpaces` and `.fullScreenAuxiliary`; hiding uses zero alpha and disabled mouse handling instead of `orderOut`. |
 | Notification lifecycle | Completion and failure notifications can appear while hidden and ordinary notifications retain the roughly 10-second auto-close behavior. Permission requests and questions remain visible until handled. |
+| Codex `/plan` questions | Detects current `request_user_input` records in Codex rollout JSONL, shows the complete question and options as a persistent notification, and provides a **Return to Codex** action. Answers remain in Codex because this event has no response hook. |
 | Idle-record cleanup | Added per-row and bulk cleanup for local idle records. Cleanup only changes the Island presentation state; it does not delete original agent sessions or terminate processes. New activity makes a cleared session visible again. |
 | Persistent cleanup state | Cleared idle records remain hidden after an app restart through a local, versioned dismissal store. |
 | Localized UI | Updated English, Simplified Chinese, and Traditional Chinese text for auto-hide and idle cleanup. |
@@ -62,6 +63,7 @@ the Island notification-driven:
 | User clicks the hidden top-center area | The underlying app receives the click; the Island stays hidden. |
 | Codex completes or fails | A notification appears automatically, then ordinary notifications close after their display period. |
 | Codex requests permission or asks a question | The actionable notification stays visible until it is handled. |
+| Codex `/plan` calls `request_user_input` | The Island shows the full question and choices; choose **Return to Codex**, answer there, and the notification resolves when Codex continues. |
 | User switches Spaces or enters a full-screen app | The hidden trigger and notifications remain available on the active Space. |
 | UI is hidden | Hooks, session monitoring, the app process, and `OpenIsland/bridge.sock` keep running. |
 
