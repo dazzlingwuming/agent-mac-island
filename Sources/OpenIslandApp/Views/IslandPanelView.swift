@@ -545,6 +545,8 @@ struct IslandPanelView: View {
             let referenceDate = context.date
 
             if isNotificationMode {
+                let measurementSurface = model.islandSurface
+
                 // Notification mode: NO ScrollView — content sizes naturally
                 sessionListContent(referenceDate: referenceDate)
                     .padding(.vertical, 2)
@@ -564,9 +566,12 @@ struct IslandPanelView: View {
                         }
                     )
                     .onPreferenceChange(NotificationContentHeightKey.self) { height in
-                        if height > 0 {
-                            model.measuredNotificationContentHeight = height
+                        guard height > 0,
+                              model.notchOpenReason == .notification,
+                              model.islandSurface == measurementSurface else {
+                            return
                         }
+                        model.measuredNotificationContentHeight = height
                     }
             } else {
                 VStack(spacing: 0) {

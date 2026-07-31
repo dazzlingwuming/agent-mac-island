@@ -830,10 +830,17 @@ final class AppModel {
             ("running", "island.section.inProgress", { $0.phase == .running }),
             ("done", "island.section.justDone", { [completedStaleThreshold] session in
                 session.phase == .completed
-                    && !session.isIdleForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                    && !session.isStaleCompletedForIsland(
+                        at: .now,
+                        threshold: completedStaleThreshold.seconds
+                    )
             }),
             ("idle", "island.section.idle", { [completedStaleThreshold] session in
-                session.isIdleForIsland(at: .now, threshold: completedStaleThreshold.seconds)
+                session.phase == .completed
+                    && session.isStaleCompletedForIsland(
+                        at: .now,
+                        threshold: completedStaleThreshold.seconds
+                    )
             }),
         ]
 

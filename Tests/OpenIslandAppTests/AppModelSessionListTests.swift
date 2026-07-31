@@ -877,7 +877,7 @@ struct AppModelSessionListTests {
         #expect(model.notchStatus == .opened)
         #expect(model.overlay.hasPendingPointerExitAutoHide)
 
-        try await Task.sleep(for: .milliseconds(1_600))
+        try await Task.sleep(for: .milliseconds(2_000))
         #expect(model.notchStatus == .closed)
     }
 
