@@ -113,6 +113,9 @@ The smoke scenarios cover the auto-hide window state, click-through behavior,
 hover and exit delays, completion and actionable notifications, and isolated
 idle-record cleanup.
 
+The source tree retains the upstream technical documentation index at
+[docs/index.md](docs/index.md) for architecture and maintenance reference.
+
 ## Scope
 
 This repository currently targets macOS only. Reproducing the same interaction
