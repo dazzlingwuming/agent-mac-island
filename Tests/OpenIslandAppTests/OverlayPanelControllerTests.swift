@@ -125,6 +125,7 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
+    @MainActor
     func notificationOnlyPointerExitUsesOneAndAHalfSecondDelay() {
         #expect(OverlayUICoordinator.pointerExitAutoHideDelay == 1.5)
     }
