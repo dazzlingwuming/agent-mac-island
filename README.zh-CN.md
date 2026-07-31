@@ -12,6 +12,15 @@
   <strong>中文</strong> | <a href="README.md">English</a>
 </p>
 
+> [!IMPORTANT]
+> **修改版来源与致谢：** 本仓库是基于
+> [Octane0411/open-vibe-island](https://github.com/Octane0411/open-vibe-island)
+> 制作的个人修改版。原项目由
+> [Octane0411 及其贡献者](https://github.com/Octane0411/open-vibe-island/graphs/contributors)
+> 原创和维护；本仓库维护者**不是原作者**，仅对本仓库记录的部分功能进行了修改。
+> 详细说明见 [FORK_NOTICE.md](FORK_NOTICE.md)。除非另有明确说明，下方的 Release、
+> Homebrew 和社区链接均指向原项目。
+
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases/latest"><img src="https://img.shields.io/github/v/release/Octane0411/open-vibe-island?style=flat-square&label=release&color=blue" alt="最新版本"></a>
   <a href="https://github.com/Octane0411/open-vibe-island/stargazers"><img src="https://img.shields.io/github/stars/Octane0411/open-vibe-island?style=flat-square&color=yellow" alt="Stars"></a>
@@ -124,8 +133,8 @@ brew install --cask open-island
 ### 方式三：从源码构建
 
 ```bash
-git clone https://github.com/Octane0411/open-vibe-island.git
-cd open-vibe-island
+git clone https://github.com/dazzlingwuming/agent-mac-island.git
+cd agent-mac-island
 open Package.swift   # 在 Xcode 中打开，点击 Run
 ```
 
@@ -188,7 +197,8 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
 <summary>点击展开</summary>
 
 ```
-我在使用 Open Island (https://github.com/Octane0411/open-vibe-island) 时遇到了问题。
+我在使用 Open Island 的个人修改版
+(https://github.com/dazzlingwuming/agent-mac-island) 时遇到了问题。
 
 请帮我提交一个 GitHub issue，按以下步骤操作：
 
@@ -209,7 +219,7 @@ Hooks **fail open**——如果 Open Island 没在运行，你的 agents 不受�
    - 正文包含以下部分：**环境信息**、**问题描述**、**复现步骤**、**期望行为 vs 实际行为**
    - 如果是 bug 请添加 "bug" 标签
 
-仓库：Octane0411/open-vibe-island
+仓库：dazzlingwuming/agent-mac-island
 ```
 
 </details>

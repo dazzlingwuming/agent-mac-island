@@ -12,6 +12,16 @@
   <a href="README.zh-CN.md">中文</a> | <strong>English</strong>
 </p>
 
+> [!IMPORTANT]
+> **Modified fork and attribution:** This repository is a personal modified
+> version of [Octane0411/open-vibe-island](https://github.com/Octane0411/open-vibe-island),
+> originally created and maintained by
+> [Octane0411 and its contributors](https://github.com/Octane0411/open-vibe-island/graphs/contributors).
+> The maintainer of this repository is **not the original author** and has only
+> made the modifications recorded in this repository. See
+> [FORK_NOTICE.md](FORK_NOTICE.md) for details. The release, Homebrew, and
+> community links below refer to the upstream project unless explicitly stated otherwise.
+
 <p align="center">
   <a href="https://github.com/Octane0411/open-vibe-island/releases/latest"><img src="https://img.shields.io/github/v/release/Octane0411/open-vibe-island?style=flat-square&label=release&color=blue" alt="Latest Release"></a>
   <a href="https://github.com/Octane0411/open-vibe-island/stargazers"><img src="https://img.shields.io/github/stars/Octane0411/open-vibe-island?style=flat-square&color=yellow" alt="Stars"></a>
@@ -125,8 +135,8 @@ Upgrade later with `brew upgrade --cask open-island`.
 ### Option 3: Build from source
 
 ```bash
-git clone https://github.com/Octane0411/open-vibe-island.git
-cd open-vibe-island
+git clone https://github.com/dazzlingwuming/agent-mac-island.git
+cd agent-mac-island
 open Package.swift   # Opens in Xcode — hit Run
 ```
 
@@ -189,7 +199,8 @@ Copy this prompt into your agent (Claude Code, Codex, etc.) to auto-generate a w
 <summary>Click to expand</summary>
 
 ```
-I'm having an issue with Open Island (https://github.com/Octane0411/open-vibe-island).
+I'm having an issue with the modified Open Island fork
+(https://github.com/dazzlingwuming/agent-mac-island).
 
 Please help me file a GitHub issue. Do the following:
 
@@ -210,7 +221,7 @@ Please help me file a GitHub issue. Do the following:
    - Body with sections: **Environment**, **Description**, **Steps to Reproduce**, **Expected vs Actual Behavior**
    - Add label "bug" if applicable
 
-Repository: Octane0411/open-vibe-island
+Repository: dazzlingwuming/agent-mac-island
 ```
 
 </details>
