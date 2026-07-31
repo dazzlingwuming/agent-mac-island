@@ -83,7 +83,18 @@ struct HarnessArtifactReport: Codable {
     let showOnlyForNotifications: Bool
     let persistedShowOnlyForNotifications: Bool
     let exercisedHiddenOverlayHover: Bool
+    let expectedHiddenHoverAtCapture: Bool
+    let exercisedPointerExitAutoHide: Bool
+    let exercisedPointerExitAutoHideCancellation: Bool
     let overlayPanelVisible: Bool
+    let overlayPanelOrdered: Bool
+    let overlayPanelClickThrough: Bool
+    let overlayPanelAcceptsMouseMovedEvents: Bool
+    let overlayPanelAlphaValue: Double
+    let overlayPanelAvailableAcrossSpaces: Bool
+    let pendingHoverOpen: Bool
+    let pendingPointerExitAutoHide: Bool
+    let pendingNotificationAutoCollapse: Bool
     let bridgeReady: Bool
     let bridgeSocketExists: Bool
     let capturedAt: Date
@@ -165,7 +176,22 @@ enum HarnessArtifactRecorder {
             showOnlyForNotifications: model.overlay.showOnlyForNotifications,
             persistedShowOnlyForNotifications: model.showOnlyForNotifications,
             exercisedHiddenOverlayHover: configuration.exerciseHiddenOverlayHover,
+            expectedHiddenHoverAtCapture: configuration.expectHiddenHoverAtCapture,
+            exercisedPointerExitAutoHide: configuration.exercisePointerExitAutoHide,
+            exercisedPointerExitAutoHideCancellation:
+                configuration.exercisePointerExitAutoHideCancellation,
             overlayPanelVisible: model.overlay.isOverlayPanelVisible,
+            overlayPanelOrdered: model.overlay.isOverlayPanelOrdered,
+            overlayPanelClickThrough: model.overlay.isOverlayPanelClickThrough,
+            overlayPanelAcceptsMouseMovedEvents:
+                model.overlay.overlayPanelAcceptsMouseMovedEvents,
+            overlayPanelAlphaValue: Double(model.overlay.overlayPanelAlphaValue),
+            overlayPanelAvailableAcrossSpaces:
+                model.overlay.isOverlayPanelAvailableAcrossSpaces,
+            pendingHoverOpen: model.overlay.hasPendingHoverOpen,
+            pendingPointerExitAutoHide: model.overlay.hasPendingPointerExitAutoHide,
+            pendingNotificationAutoCollapse:
+                model.overlay.hasPendingNotificationAutoCollapse,
             bridgeReady: model.isBridgeReady,
             bridgeSocketExists: fileManager.fileExists(
                 atPath: BridgeSocketLocation.currentURL().path
@@ -203,7 +229,9 @@ enum HarnessArtifactRecorder {
     private static func orderedVisibleWindows() -> [NSWindow] {
         NSApp.windows
             .filter { window in
-                window.isVisible && recognizedWindowKind(for: window) != nil
+                window.isVisible
+                    && window.alphaValue > 0.001
+                    && recognizedWindowKind(for: window) != nil
             }
             .sorted { lhs, rhs in
                 lhs.frame.maxY > rhs.frame.maxY

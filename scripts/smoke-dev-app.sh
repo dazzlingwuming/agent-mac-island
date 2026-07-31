@@ -19,6 +19,9 @@ export OPEN_ISLAND_HARNESS_START_BRIDGE="${OPEN_ISLAND_HARNESS_START_BRIDGE:-0}"
 export OPEN_ISLAND_HARNESS_BOOT_ANIMATION="${OPEN_ISLAND_HARNESS_BOOT_ANIMATION:-0}"
 export OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS="${OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS:-0}"
 export OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER="${OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER:-0}"
+export OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE="${OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE:-0}"
+export OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE="${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE:-0}"
+export OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION="${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION:-0}"
 export OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS="${OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS:-1}"
 export OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="${OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS:-2}"
 export OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$artifact_dir"
@@ -43,14 +46,36 @@ fi
 png_count="$(find "$artifact_dir" -maxdepth 1 -name '*.png' | wc -l | tr -d ' ')"
 expects_hidden_overlay=0
 exercises_hidden_hover=0
+expects_hidden_hover_at_capture=0
+exercises_pointer_exit_auto_hide=0
+exercises_pointer_exit_auto_hide_cancellation=0
 case "${OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER:l}" in
     1|true|yes|on)
         exercises_hidden_hover=1
         ;;
 esac
+case "${OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE:l}" in
+    1|true|yes|on)
+        expects_hidden_hover_at_capture=1
+        ;;
+esac
+case "${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE:l}" in
+    1|true|yes|on)
+        exercises_pointer_exit_auto_hide=1
+        ;;
+esac
+case "${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION:l}" in
+    1|true|yes|on)
+        exercises_pointer_exit_auto_hide_cancellation=1
+        ;;
+esac
 case "${OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS:l}" in
     1|true|yes|on)
         if [[ "$OPEN_ISLAND_HARNESS_SCENARIO" == "closed" && "$exercises_hidden_hover" -eq 0 ]]; then
+            expects_hidden_overlay=1
+        elif [[ "$expects_hidden_hover_at_capture" -eq 1 ]]; then
+            expects_hidden_overlay=1
+        elif [[ "$exercises_pointer_exit_auto_hide" -eq 1 && "$exercises_pointer_exit_auto_hide_cancellation" -eq 0 ]]; then
             expects_hidden_overlay=1
         fi
         ;;

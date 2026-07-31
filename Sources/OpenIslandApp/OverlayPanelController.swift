@@ -37,9 +37,35 @@ final class OverlayPanelController {
     private var hoverCancelGrace: DispatchWorkItem?
     weak var model: AppModel?
     private(set) var notchRect: NSRect = .zero
+    private(set) var isVisuallyVisible = false
 
-    var isVisible: Bool {
+    var isOrdered: Bool {
         panel?.isVisible == true
+    }
+
+    var isClickThrough: Bool {
+        panel?.ignoresMouseEvents ?? true
+    }
+
+    var acceptsMouseMovedEvents: Bool {
+        panel?.acceptsMouseMovedEvents ?? false
+    }
+
+    var alphaValue: CGFloat {
+        panel?.alphaValue ?? 0
+    }
+
+    var isAvailableAcrossSpaces: Bool {
+        guard let behavior = panel?.collectionBehavior else {
+            return false
+        }
+
+        return behavior.contains(.canJoinAllSpaces)
+            && behavior.contains(.fullScreenAuxiliary)
+    }
+
+    var hasPendingHoverOpen: Bool {
+        hoverTimer != nil
     }
 
     nonisolated static func shouldActivatePanel(for reason: NotchOpenReason?) -> Bool {
@@ -56,23 +82,29 @@ final class OverlayPanelController {
         OverlayDisplayResolver.availableDisplayOptions()
     }
 
+    @discardableResult
     func ensurePanel(
         model: AppModel,
         preferredScreenID: String?,
-        visible: Bool = true
-    ) {
+        visuallyVisible: Bool = true,
+        interactive: Bool = false
+    ) -> OverlayPlacementDiagnostics? {
         self.model = model
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
-        positionPanel(panel, preferredScreenID: preferredScreenID, animated: false)
-        panel.ignoresMouseEvents = true
-        panel.acceptsMouseMovedEvents = false
-        if visible {
-            panel.orderFrontRegardless()
-        } else {
-            panel.orderOut(nil)
-        }
+        let diagnostics = positionPanel(
+            panel,
+            preferredScreenID: preferredScreenID,
+            animated: false
+        )
+        applyPresentationState(
+            to: panel,
+            visuallyVisible: visuallyVisible,
+            interactive: interactive
+        )
+        presentPanel(panel, activates: false)
         startEventMonitoring()
+        return diagnostics
     }
 
     func show(model: AppModel, preferredScreenID: String?) -> OverlayPlacementDiagnostics? {
@@ -80,17 +112,30 @@ final class OverlayPanelController {
         let panel = self.panel ?? makePanel(model: model)
         self.panel = panel
         let diagnostics = positionPanel(panel, preferredScreenID: preferredScreenID, animated: true)
+        applyPresentationState(
+            to: panel,
+            visuallyVisible: true,
+            interactive: true
+        )
         presentPanel(panel, activates: Self.shouldActivatePanel(for: model.notchOpenReason))
-        panel.ignoresMouseEvents = false
-        panel.acceptsMouseMovedEvents = true
         startEventMonitoring()
         return diagnostics
     }
 
     func hideCompletely() {
-        panel?.ignoresMouseEvents = true
-        panel?.acceptsMouseMovedEvents = false
-        panel?.orderOut(nil)
+        isVisuallyVisible = false
+        guard let panel else {
+            return
+        }
+
+        applyPresentationState(
+            to: panel,
+            visuallyVisible: false,
+            interactive: false
+        )
+        // Keep the transparent, click-through panel ordered so its
+        // `.canJoinAllSpaces` membership survives Space/full-screen changes.
+        presentPanel(panel, activates: false)
     }
 
     func setInteractive(_ interactive: Bool) {
@@ -101,7 +146,7 @@ final class OverlayPanelController {
         panel.ignoresMouseEvents = !interactive
         panel.acceptsMouseMovedEvents = interactive
 
-        if interactive {
+        if interactive, isVisuallyVisible {
             presentPanel(panel, activates: Self.shouldActivatePanel(for: model?.notchOpenReason))
         }
     }
@@ -198,6 +243,17 @@ final class OverlayPanelController {
         } else {
             panel.orderFrontRegardless()
         }
+    }
+
+    private func applyPresentationState(
+        to panel: NSPanel,
+        visuallyVisible: Bool,
+        interactive: Bool
+    ) {
+        isVisuallyVisible = visuallyVisible
+        panel.alphaValue = visuallyVisible ? 1 : 0
+        panel.ignoresMouseEvents = !interactive
+        panel.acceptsMouseMovedEvents = interactive
     }
 
     private func computeNotchRect(screen: NSScreen?) {
