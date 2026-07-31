@@ -119,6 +119,8 @@ zsh scripts/harness.sh smoke-all
 验证范围包括：完全隐藏、透明窗口点击穿透、跨 Space、1.5 秒悬停、离开延迟隐藏、
 通知自动显示、权限/问题卡片不超时，以及隔离环境中的空闲记录清理。
 
+源码中继续保留上游技术文档索引 [docs/index.md](docs/index.md)，用于查询架构和维护资料。
+
 ## 当前范围
 
 这个仓库目前只支持 macOS。Windows 可以实现类似交互，但需要单独开发 Windows
