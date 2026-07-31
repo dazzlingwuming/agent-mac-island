@@ -83,9 +83,11 @@ struct HarnessArtifactReport: Codable {
     let showOnlyForNotifications: Bool
     let persistedShowOnlyForNotifications: Bool
     let exercisedHiddenOverlayHover: Bool
+    let exercisedHiddenOverlayClick: Bool
     let expectedHiddenHoverAtCapture: Bool
     let exercisedPointerExitAutoHide: Bool
     let exercisedPointerExitAutoHideCancellation: Bool
+    let exercisedIdleSessionCleanup: Bool
     let overlayPanelVisible: Bool
     let overlayPanelOrdered: Bool
     let overlayPanelClickThrough: Bool
@@ -176,10 +178,12 @@ enum HarnessArtifactRecorder {
             showOnlyForNotifications: model.overlay.showOnlyForNotifications,
             persistedShowOnlyForNotifications: model.showOnlyForNotifications,
             exercisedHiddenOverlayHover: configuration.exerciseHiddenOverlayHover,
+            exercisedHiddenOverlayClick: configuration.exerciseHiddenOverlayClick,
             expectedHiddenHoverAtCapture: configuration.expectHiddenHoverAtCapture,
             exercisedPointerExitAutoHide: configuration.exercisePointerExitAutoHide,
             exercisedPointerExitAutoHideCancellation:
                 configuration.exercisePointerExitAutoHideCancellation,
+            exercisedIdleSessionCleanup: configuration.exerciseIdleSessionCleanup,
             overlayPanelVisible: model.overlay.isOverlayPanelVisible,
             overlayPanelOrdered: model.overlay.isOverlayPanelOrdered,
             overlayPanelClickThrough: model.overlay.isOverlayPanelClickThrough,

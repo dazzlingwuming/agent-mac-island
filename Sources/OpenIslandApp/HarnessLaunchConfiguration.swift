@@ -7,9 +7,11 @@ struct HarnessLaunchConfiguration {
     let shouldPerformBootAnimation: Bool
     let showOnlyForNotifications: Bool?
     let exerciseHiddenOverlayHover: Bool
+    let exerciseHiddenOverlayClick: Bool
     let expectHiddenHoverAtCapture: Bool
     let exercisePointerExitAutoHide: Bool
     let exercisePointerExitAutoHideCancellation: Bool
+    let exerciseIdleSessionCleanup: Bool
     let captureDelay: TimeInterval?
     let autoExitAfter: TimeInterval?
     let artifactDirectoryURL: URL?
@@ -37,6 +39,10 @@ struct HarnessLaunchConfiguration {
             environment["OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER"],
             default: false
         )
+        exerciseHiddenOverlayClick = Self.boolValue(
+            environment["OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_CLICK"],
+            default: false
+        )
         expectHiddenHoverAtCapture = Self.boolValue(
             environment["OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE"],
             default: false
@@ -49,6 +55,10 @@ struct HarnessLaunchConfiguration {
             environment[
                 "OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION"
             ],
+            default: false
+        )
+        exerciseIdleSessionCleanup = Self.boolValue(
+            environment["OPEN_ISLAND_HARNESS_EXERCISE_IDLE_SESSION_CLEANUP"],
             default: false
         )
         captureDelay = Self.timeIntervalValue(

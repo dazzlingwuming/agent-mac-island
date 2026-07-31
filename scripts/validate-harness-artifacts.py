@@ -136,6 +136,12 @@ def validate_runtime(report_path: pathlib.Path, report: dict) -> None:
     if report.get("presentOverlay") and "overlayPresented" not in milestone_names:
         fail("runtime milestones are missing overlayPresented for an overlay-present run")
 
+    if (
+        report.get("exercisedIdleSessionCleanup")
+        and "idleSessionCleanupExercised" not in milestone_names
+    ):
+        fail("runtime milestones are missing idleSessionCleanupExercised")
+
     if report.get("startedBridge") is False and "bridgeSkipped" not in milestone_names:
         fail("runtime milestones are missing bridgeSkipped for a deterministic run")
 
@@ -225,8 +231,12 @@ def main() -> None:
             if report.get("exercisedHiddenOverlayHover") is not True:
                 fail("pending hidden-hover capture did not exercise hover")
             if report.get("pendingHoverOpen") is not True:
-                fail("2-second hover timer was not pending at the early capture")
+                fail("1.5-second hover timer was not pending at the early capture")
             context = "notificationOnlyHoverPending"
+        elif report.get("exercisedHiddenOverlayClick"):
+            if report.get("pendingHoverOpen") is not False:
+                fail("ignored hidden click left a hover-open timer pending")
+            context = "notificationOnlyClickIgnored"
         elif (
             report.get("exercisedPointerExitAutoHide")
             and not report.get("exercisedPointerExitAutoHideCancellation")
@@ -337,7 +347,7 @@ def main() -> None:
         require_frame_between(
             overlay_frame,
             width=(520, 780),
-            height=(360, 500),
+            height=(240, 500) if report.get("exercisedIdleSessionCleanup") else (360, 500),
             context="sessionList overlay frame",
         )
         if len(button_labels) < 3 and report.get("sessionCount", 0) < 3:

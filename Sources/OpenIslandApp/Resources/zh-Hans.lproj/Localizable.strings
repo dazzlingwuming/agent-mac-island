@@ -22,7 +22,7 @@
 "settings.general.behavior" = "行为";
 "settings.general.hideFullscreen" = "全屏时隐藏";
 "settings.general.showOnlyForNotifications" = "自动隐藏（悬停或通知时显示）";
-"settings.general.autoHideDescription" = "鼠标停留在屏幕顶部中央约 2 秒即可打开。";
+"settings.general.autoHideDescription" = "鼠标停留在屏幕顶部中央约 1.5 秒即可打开；点击该区域不会唤醒。";
 "settings.general.autoCollapse" = "鼠标离开时自动收起";
 "settings.general.showDockIcon" = "在 Dock 中显示图标";
 "settings.general.hapticFeedback" = "悬停时震动反馈";
@@ -200,6 +200,15 @@
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
+"island.session.dismiss" = "关闭会话";
+"island.idleCleanup.button" = "清理空闲记录（%lld）";
+"island.idleCleanup.rowAction" = "移除这条空闲记录";
+"island.idleCleanup.confirmTitle" = "清理 %lld 条本地空闲记录？";
+"island.idleCleanup.confirmAction" = "清理记录";
+"island.idleCleanup.confirmMessage" = "只会从 Open Island 中移除这些记录，不会删除原始 Agent 会话或终止任何进程。会话有新活动时会自动重新显示。";
+"island.idleCleanup.clearedOne" = "已清理 1 条本地空闲记录。";
+"island.idleCleanup.clearedCount" = "已清理 %lld 条本地空闲记录。";
+"island.idleCleanup.persistFailed" = "无法保存空闲记录清理状态：%@";
 
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "请求工具权限";

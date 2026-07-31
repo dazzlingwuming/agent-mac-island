@@ -106,6 +106,8 @@ struct IslandPanelView: View {
 
     @State private var isHovering = false
     @State private var showingQuitConfirmation = false
+    @State private var showingIdleCleanupConfirmation = false
+    @State private var pendingIdleCleanupCount = 0
     @State private var keepsOpenedSurfaceMounted = false
     @State private var openedSurfaceMountGeneration: UInt64 = 0
 
@@ -187,6 +189,21 @@ struct IslandPanelView: View {
         } message: {
             Text(model.lang.t("island.quit.confirmMessage"))
         }
+        .confirmationDialog(
+            model.lang.t("island.idleCleanup.confirmTitle", pendingIdleCleanupCount),
+            isPresented: $showingIdleCleanupConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(model.lang.t("island.idleCleanup.confirmAction"), role: .destructive) {
+                model.clearAllIdleSessionRecords()
+                pendingIdleCleanupCount = 0
+            }
+            Button(model.lang.t("settings.general.cancel"), role: .cancel) {
+                pendingIdleCleanupCount = 0
+            }
+        } message: {
+            Text(model.lang.t("island.idleCleanup.confirmMessage"))
+        }
         .onAppear {
             syncOpenedSurfaceMount(with: model.notchStatus, immediate: true)
         }
@@ -233,7 +250,7 @@ struct IslandPanelView: View {
             }
         }
         .onTapGesture {
-            if model.notchStatus != .opened {
+            if model.notchStatus != .opened && !model.showOnlyForNotifications {
                 model.notchOpen(reason: .click)
             }
         }
@@ -633,7 +650,15 @@ struct IslandPanelView: View {
                                 onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                                     ? { model.replyToSession(session, text: $0) } : nil,
                                 onJump: { model.jumpToSession(session) },
-                                onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                                onDismiss: sessionDismissAction(
+                                    for: session,
+                                    referenceDate: referenceDate
+                                ),
+                                dismissLabel: sessionDismissLabel(
+                                    for: session,
+                                    referenceDate: referenceDate
+                                ),
+                                dismissIconName: session.isRemote ? "xmark.circle.fill" : "trash"
                             )
                         }
                     }
@@ -683,7 +708,15 @@ struct IslandPanelView: View {
                         onReply: TerminalTextSender.canReply(to: session, enabled: model.completionReplyEnabled)
                             ? { model.replyToSession(session, text: $0) } : nil,
                         onJump: { model.jumpToSession(session) },
-                        onDismiss: session.isRemote ? { model.dismissSession(session.id) } : nil
+                        onDismiss: sessionDismissAction(
+                            for: session,
+                            referenceDate: referenceDate
+                        ),
+                        dismissLabel: sessionDismissLabel(
+                            for: session,
+                            referenceDate: referenceDate
+                        ),
+                        dismissIconName: session.isRemote ? "xmark.circle.fill" : "trash"
                     )
                 }
             }
@@ -692,6 +725,7 @@ struct IslandPanelView: View {
 
     private func sessionPanelHeader(referenceDate: Date) -> some View {
         let overview = sessionOverviewItems(referenceDate: referenceDate)
+        let idleCleanupCount = model.clearableIdleSessionRecordCount(at: referenceDate)
 
         return HStack(spacing: 8) {
             Text(lang.t("island.sessionList.title").uppercased())
@@ -705,6 +739,27 @@ struct IslandPanelView: View {
             }
 
             Spacer(minLength: 0)
+
+            if idleCleanupCount > 0 {
+                Button {
+                    pendingIdleCleanupCount = idleCleanupCount
+                    showingIdleCleanupConfirmation = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 9.5, weight: .semibold))
+                        Text("\(idleCleanupCount)")
+                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundStyle(V6Palette.paper.opacity(0.48))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(lang.t("island.idleCleanup.button", idleCleanupCount))
+                .accessibilityLabel(lang.t("island.idleCleanup.button", idleCleanupCount))
+            }
         }
         .padding(.leading, sessionListSideInset)
         .padding(.trailing, sessionListSideInset)
@@ -735,10 +790,10 @@ struct IslandPanelView: View {
         let running = sessions.filter { $0.phase == .running }.count
         let done = sessions.filter {
             $0.phase == .completed
-                && !isIdleSessionOverviewItem($0, referenceDate: referenceDate, threshold: threshold)
+                && !$0.isIdleForIsland(at: referenceDate, threshold: threshold)
         }.count
         let idle = sessions.filter {
-            isIdleSessionOverviewItem($0, referenceDate: referenceDate, threshold: threshold)
+            $0.isIdleForIsland(at: referenceDate, threshold: threshold)
         }.count
 
         return [
@@ -750,14 +805,31 @@ struct IslandPanelView: View {
         ].filter { $0.id == "total" || $0.count > 0 }
     }
 
-    private func isIdleSessionOverviewItem(
-        _ session: AgentSession,
-        referenceDate: Date,
-        threshold: TimeInterval
-    ) -> Bool {
-        guard session.phase == .completed else { return false }
-        return session.isStaleCompletedForIsland(at: referenceDate, threshold: threshold)
-            || session.islandPresence(at: referenceDate) == .inactive
+    private func sessionDismissAction(
+        for session: AgentSession,
+        referenceDate: Date
+    ) -> (() -> Void)? {
+        if session.isRemote {
+            return { model.dismissSession(session.id) }
+        }
+
+        guard model.canClearIdleSessionRecord(session, at: referenceDate) else {
+            return nil
+        }
+        return { model.clearIdleSessionRecord(session.id) }
+    }
+
+    private func sessionDismissLabel(
+        for session: AgentSession,
+        referenceDate: Date
+    ) -> String? {
+        if session.isRemote {
+            return lang.t("island.session.dismiss")
+        }
+        guard model.canClearIdleSessionRecord(session, at: referenceDate) else {
+            return nil
+        }
+        return lang.t("island.idleCleanup.rowAction")
     }
 
     private func sessionOverviewView(_ items: [SessionOverviewItem], compact: Bool) -> some View {
@@ -1194,6 +1266,8 @@ private struct IslandSessionRow: View {
     var onReply: ((String) -> Void)?
     let onJump: () -> Void
     var onDismiss: (() -> Void)?
+    var dismissLabel: String?
+    var dismissIconName: String = "xmark.circle.fill"
 
     @State private var isHighlighted = false
     @State private var detailOverride: Bool?
@@ -1299,7 +1373,11 @@ private struct IslandSessionRow: View {
                     .frame(minWidth: 30, alignment: .trailing)
                 detailToggleButton(isOpen: showsDetail)
                 if let onDismiss {
-                    DismissButton(action: onDismiss)
+                    DismissButton(
+                        systemImage: dismissIconName,
+                        label: dismissLabel ?? lang.t("island.session.dismiss"),
+                        action: onDismiss
+                    )
                 }
             }
         }
@@ -2713,16 +2791,20 @@ extension MarkdownUI.Theme {
 }
 
 private struct DismissButton: View {
+    let systemImage: String
+    let label: String
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark.circle.fill")
+            Image(systemName: systemImage)
                 .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(isHovered ? 0.8 : 0.4))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+        .help(label)
+        .accessibilityLabel(label)
     }
 }

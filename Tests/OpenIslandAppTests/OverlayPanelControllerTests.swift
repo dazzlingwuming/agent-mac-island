@@ -93,11 +93,25 @@ struct OverlayPanelControllerTests {
     }
 
     @Test
-    func notificationOnlyHoverRequiresTwoSecondDwell() {
+    func notificationOnlyHoverRequiresOneAndAHalfSecondDwell() {
         #expect(
             OverlayPanelController.hoverOpenDelay(
                 showOnlyForNotifications: true
-            ) == 2.0
+            ) == 1.5
+        )
+    }
+
+    @Test
+    func notificationOnlyModeIgnoresClosedSurfaceClicks() {
+        #expect(
+            !OverlayPanelController.shouldOpenClosedOverlayOnMouseDown(
+                showOnlyForNotifications: true
+            )
+        )
+        #expect(
+            OverlayPanelController.shouldOpenClosedOverlayOnMouseDown(
+                showOnlyForNotifications: false
+            )
         )
     }
 

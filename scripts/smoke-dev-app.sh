@@ -19,9 +19,11 @@ export OPEN_ISLAND_HARNESS_START_BRIDGE="${OPEN_ISLAND_HARNESS_START_BRIDGE:-0}"
 export OPEN_ISLAND_HARNESS_BOOT_ANIMATION="${OPEN_ISLAND_HARNESS_BOOT_ANIMATION:-0}"
 export OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS="${OPEN_ISLAND_HARNESS_SHOW_ONLY_FOR_NOTIFICATIONS:-0}"
 export OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER="${OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_HOVER:-0}"
+export OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_CLICK="${OPEN_ISLAND_HARNESS_EXERCISE_HIDDEN_CLICK:-0}"
 export OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE="${OPEN_ISLAND_HARNESS_EXPECT_HIDDEN_HOVER_AT_CAPTURE:-0}"
 export OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE="${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE:-0}"
 export OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION="${OPEN_ISLAND_HARNESS_EXERCISE_POINTER_EXIT_AUTO_HIDE_CANCELLATION:-0}"
+export OPEN_ISLAND_HARNESS_EXERCISE_IDLE_SESSION_CLEANUP="${OPEN_ISLAND_HARNESS_EXERCISE_IDLE_SESSION_CLEANUP:-0}"
 export OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS="${OPEN_ISLAND_HARNESS_CAPTURE_DELAY_SECONDS:-1}"
 export OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="${OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS:-2}"
 export OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$artifact_dir"
@@ -109,6 +111,33 @@ subprocess.run(
     check=True,
 )
 PY
+
+case "${OPEN_ISLAND_HARNESS_EXERCISE_IDLE_SESSION_CLEANUP:l}" in
+    1|true|yes|on)
+        dismissal_path="$artifact_dir/dismissed-idle-sessions.json"
+        if [[ ! -f "$dismissal_path" ]]; then
+            echo "Smoke failed: idle cleanup did not persist $dismissal_path" >&2
+            exit 1
+        fi
+        python3 - "$report_path" "$dismissal_path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as report_file:
+    report = json.load(report_file)
+with open(sys.argv[2], encoding="utf-8") as dismissal_file:
+    dismissals = json.load(dismissal_file)
+
+records = dismissals.get("records", [])
+if not report.get("exercisedIdleSessionCleanup"):
+    raise SystemExit("Smoke failed: report did not record idle cleanup exercise")
+if not records:
+    raise SystemExit("Smoke failed: idle cleanup persisted no records")
+if report.get("liveSessionCount", 0) >= report.get("sessionCount", 0):
+    raise SystemExit("Smoke failed: idle cleanup did not reduce displayed live sessions")
+PY
+        ;;
+esac
 
 echo "Artifacts written to $artifact_dir"
 echo "OpenIslandApp smoke passed"
