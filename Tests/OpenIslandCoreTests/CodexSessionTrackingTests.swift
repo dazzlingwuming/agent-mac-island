@@ -1430,6 +1430,107 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
     }
+
+    @Test
+    func codexRolloutDiscoveryStreamsOneVeryLargeTrailingJSONLLine() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-huge-line-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-huge-line.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let hugeMessage = String(repeating: "x", count: 3 * 64 * 1_024)
+        let body = [
+            sessionMetaLine(
+                sessionID: "codex-session-huge-line",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/open-island"
+            ),
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "agent_message", "message": hugeMessage]
+            ),
+        ].joined(separator: "\n")
+        try body.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(rootURL: rootURL, maxFiles: 10)
+        let records = discovery.discoverRecentSessions(now: now)
+
+        #expect(discovery.lastScanDiagnostics.bytesRead > 3 * 64 * 1_024)
+        #expect(records.first?.sessionID == "codex-session-huge-line")
+        #expect(
+            records.first?.codexMetadata?.lastAssistantMessage
+                == String(repeating: "x", count: 109).appending("…")
+        )
+    }
+
+    @Test
+    func codexRolloutDiscoveryPreservesPendingPlanQuestionAcrossIncrementalAppend() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-discovery-question-append-\(UUID().uuidString)", isDirectory: true)
+        let rolloutDirectoryURL = rootURL.appendingPathComponent("2026/04/02", isDirectory: true)
+        let rolloutURL = rolloutDirectoryURL.appendingPathComponent("rollout-question-append.jsonl")
+        let now = Date(timeIntervalSince1970: 1_743_555_200)
+        try FileManager.default.createDirectory(at: rolloutDirectoryURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let question = rolloutLine(
+            timestamp: "2026-04-02T04:03:45.000Z",
+            type: "response_item",
+            payload: [
+                "type": "function_call",
+                "name": "request_user_input",
+                "call_id": "call-incremental-question",
+                "arguments": requestUserInputArguments(),
+            ]
+        )
+        try [
+            sessionMetaLine(
+                sessionID: "codex-session-question-append",
+                timestamp: "2026-04-02T04:03:44.000Z",
+                cwd: "/tmp/open-island"
+            ),
+            question,
+        ].joined(separator: "\n").appending("\n").write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: rolloutURL.path)
+
+        let discovery = CodexRolloutDiscovery(rootURL: rootURL, maxFiles: 10)
+        let waiting = discovery.discoverRecentSessions(now: now)
+        #expect(waiting.first?.phase == .waitingForAnswer)
+        #expect(waiting.first?.questionPrompt != nil)
+
+        let cached = discovery.discoverRecentSessions(now: now)
+        #expect(discovery.lastScanDiagnostics.bytesRead == 0)
+        #expect(discovery.lastScanDiagnostics.parsedFileCount == 0)
+        #expect(discovery.lastScanDiagnostics.cacheHitCount == 1)
+        #expect(cached.first?.phase == .waitingForAnswer)
+        #expect(cached.first?.questionPrompt == waiting.first?.questionPrompt)
+
+        let answer = rolloutLine(
+            timestamp: "2026-04-02T04:03:46.000Z",
+            type: "response_item",
+            payload: [
+                "type": "function_call_output",
+                "call_id": "call-incremental-question",
+                "output": "{\"answers\":{}}",
+            ]
+        ).appending("\n")
+        let handle = try FileHandle(forWritingTo: rolloutURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(answer.utf8))
+        try handle.close()
+        let later = now.addingTimeInterval(30)
+        try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: rolloutURL.path)
+
+        let resolved = discovery.discoverRecentSessions(now: later)
+        #expect(discovery.lastScanDiagnostics.bytesRead == answer.utf8.count)
+        #expect(resolved.first?.phase == .running)
+        #expect(resolved.first?.questionPrompt == nil)
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {
