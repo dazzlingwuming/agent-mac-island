@@ -30,6 +30,7 @@ final class OverlayPanelController {
     private static let completionCardChromeHeight: CGFloat = 187
     private static let completionCardMinHeight: CGFloat = 210
     private static let completionCardMaxHeight: CGFloat = 400
+    private static let usageAlertEstimatedHeight: CGFloat = 280
 
     private var panel: NotchPanel?
     private var eventMonitors = NotchEventMonitors()
@@ -601,6 +602,15 @@ final class OverlayPanelController {
     }
 
     private func openedContentHeight(for model: AppModel) -> CGFloat {
+        if model.notchOpenReason == .notification,
+           model.islandSurface.codexUsageAlert != nil {
+            if model.measuredNotificationContentHeight > 0 {
+                return model.measuredNotificationContentHeight
+                    + Self.notificationMeasuredContentPadding
+            }
+            return Self.usageAlertEstimatedHeight
+        }
+
         let now = Date.now
         let visibleSessions = openedVisibleSessions(
             sessions: model.islandListSessions

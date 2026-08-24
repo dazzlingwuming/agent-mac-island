@@ -232,6 +232,15 @@ struct GeneralSettingsPane: View {
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
+                VStack(alignment: .leading, spacing: 3) {
+                    Toggle(lang.t("settings.general.codexUsagePaceAlerts"), isOn: Binding(
+                        get: { model.codexUsagePaceAlertsEnabled },
+                        set: { model.codexUsagePaceAlertsEnabled = $0 }
+                    ))
+                    Text(lang.t("settings.general.codexUsagePaceAlertsDescription"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
         }
@@ -648,6 +657,7 @@ struct SetupSettingsPane: View {
                     get: { model.showCodexUsage },
                     set: { model.showCodexUsage = $0 }
                 ))
+
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))

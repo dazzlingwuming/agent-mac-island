@@ -42,6 +42,9 @@ final class HookInstallationCoordinator {
     var onStatusMessage: ((String) -> Void)?
 
     @ObservationIgnored
+    var onCodexUsageSnapshotUpdated: ((CodexUsageSnapshot?) -> Void)?
+
+    @ObservationIgnored
     private let codexHookInstallationManager = CodexHookInstallationManager()
 
     /// Computed so it always reflects the latest `ClaudeConfigDirectory` setting.
@@ -95,6 +98,9 @@ final class HookInstallationCoordinator {
 
     @ObservationIgnored
     private var codexUsageMonitorTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var codexUsageRefreshTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var relativeTimestampFormatter: RelativeDateTimeFormatter {
@@ -772,14 +778,19 @@ final class HookInstallationCoordinator {
     }
 
     func refreshCodexUsageState() {
-        Task { [weak self] in
+        guard codexUsageRefreshTask == nil else { return }
+
+        codexUsageRefreshTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer { self.codexUsageRefreshTask = nil }
 
             do {
                 let snapshot = try await Task.detached(priority: .utility) {
                     try CodexUsageLoader.load()
                 }.value
+                guard !Task.isCancelled else { return }
                 self.codexUsageSnapshot = snapshot
+                self.onCodexUsageSnapshotUpdated?(snapshot)
             } catch {
                 self.onStatusMessage?("Failed to read Codex usage state: \(error.localizedDescription)")
             }

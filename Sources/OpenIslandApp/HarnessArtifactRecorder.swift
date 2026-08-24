@@ -97,6 +97,7 @@ struct HarnessArtifactReport: Codable {
     let pendingHoverOpen: Bool
     let pendingPointerExitAutoHide: Bool
     let pendingNotificationAutoCollapse: Bool
+    let defersTimedNotificationAutoCollapse: Bool
     let bridgeReady: Bool
     let bridgeSocketExists: Bool
     let capturedAt: Date
@@ -196,6 +197,8 @@ enum HarnessArtifactRecorder {
             pendingPointerExitAutoHide: model.overlay.hasPendingPointerExitAutoHide,
             pendingNotificationAutoCollapse:
                 model.overlay.hasPendingNotificationAutoCollapse,
+            defersTimedNotificationAutoCollapse:
+                model.shouldDeferTimedNotificationAutoCollapse,
             bridgeReady: model.isBridgeReady,
             bridgeSocketExists: fileManager.fileExists(
                 atPath: BridgeSocketLocation.currentURL().path
@@ -322,6 +325,8 @@ enum HarnessArtifactRecorder {
             "sessionList"
         case let .sessionList(actionableSessionID: sessionID?):
             "sessionList:actionable(\(sessionID))"
+        case let .codexUsageAlert(alert):
+            "codexUsageAlert:\(alert.severity.rawValue)"
         }
     }
 

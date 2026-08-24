@@ -19,6 +19,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
     case approvalCard
     case questionCard
     case codexQuestionCard
+    case usagePaceAlert
     case completionCard
     case longCompletionCard
 
@@ -36,6 +37,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Question Card"
         case .codexQuestionCard:
             "Codex Question Card"
+        case .usagePaceAlert:
+            "Codex Usage Pace Alert"
         case .completionCard:
             "Completion Card"
         case .longCompletionCard:
@@ -55,6 +58,8 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
             "Auto-expanded question surface with selectable answer buttons."
         case .codexQuestionCard:
             "Persistent Codex plan-mode question with read-only options and a return action."
+        case .usagePaceAlert:
+            "Timed colored warning when the seven-day Codex allowance is being consumed too quickly."
         case .completionCard:
             "Auto-expanded finished-task reminder surface after a turn completes."
         case .longCompletionCard:
@@ -127,6 +132,33 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 islandSurface: .sessionList(actionableSessionID: session.id),
                 sessions: DebugSessionFactory.notificationSessions(lead: session, now: now),
                 selectedSessionID: session.id
+            )
+
+        case .usagePaceAlert:
+            let alert = CodexUsagePaceAlert(
+                id: "debug-usage-pace-fast",
+                notificationKey: "debug|10080|usage",
+                risk: .fast,
+                severity: .fast,
+                observedAt: now,
+                usedPercentage: 42,
+                shortTermUsedPercentage: 63,
+                todayIncreasePercentage: 16,
+                recentDailyRatePercentage: 36,
+                recommendedDailyPercentage: 8,
+                projectedExhaustionAt: now.addingTimeInterval(2 * 86_400),
+                resetsAt: now.addingTimeInterval(5 * 86_400),
+                hasSufficientTrendData: true
+            )
+            return IslandDebugSnapshot(
+                title: title,
+                summary: summary,
+                previewHeight: 310,
+                notchStatus: .opened,
+                notchOpenReason: .notification,
+                islandSurface: .codexUsageAlert(alert),
+                sessions: [],
+                selectedSessionID: nil
             )
 
         case .completionCard:

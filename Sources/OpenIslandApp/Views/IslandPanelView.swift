@@ -317,7 +317,7 @@ struct IslandPanelView: View {
 
         ZStack(alignment: .top) {
             surfaceShape
-                .fill(V6Palette.ink)
+                .fill(openedSurfaceFillColor)
                 .frame(width: surfaceWidth, height: surfaceHeight)
 
             VStack(spacing: 0) {
@@ -335,10 +335,40 @@ struct IslandPanelView: View {
             .clipShape(surfaceShape)
             .overlay {
                 surfaceShape
-                    .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    .stroke(openedSurfaceStrokeColor, lineWidth: 1)
             }
         }
         .frame(width: surfaceWidth, height: surfaceHeight, alignment: .top)
+    }
+
+    private var openedSurfaceFillColor: Color {
+        guard let alert = model.islandSurface.codexUsageAlert else {
+            return V6Palette.ink
+        }
+
+        switch alert.severity {
+        case .attention:
+            return Color(red: 0.14, green: 0.105, blue: 0.035)
+        case .fast:
+            return Color(red: 0.17, green: 0.075, blue: 0.025)
+        case .critical:
+            return Color(red: 0.16, green: 0.035, blue: 0.04)
+        }
+    }
+
+    private var openedSurfaceStrokeColor: Color {
+        guard let alert = model.islandSurface.codexUsageAlert else {
+            return Color.white.opacity(0.07)
+        }
+
+        switch alert.severity {
+        case .attention:
+            return Color.yellow.opacity(0.32)
+        case .fast:
+            return Color.orange.opacity(0.4)
+        case .critical:
+            return Color.red.opacity(0.42)
+        }
     }
 
     // MARK: - Closed state
@@ -433,22 +463,26 @@ struct IslandPanelView: View {
 
     private var openedContent: some View {
         VStack(spacing: 8) {
-            if !model.hasAnyInstalledAgent {
-                installHooksHint
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            }
-
-            if model.shouldShowSessionBootstrapPlaceholder {
-                sessionBootstrapPlaceholder
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else if model.islandListSessions.isEmpty {
-                emptyState
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            } else {
+            if isNotificationMode {
                 sessionList
+            } else {
+                if !model.hasAnyInstalledAgent {
+                    installHooksHint
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                }
+
+                if model.shouldShowSessionBootstrapPlaceholder {
+                    sessionBootstrapPlaceholder
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else if model.islandListSessions.isEmpty {
+                    emptyState
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                } else {
+                    sessionList
+                }
             }
         }
         .padding(.bottom, 0)
@@ -531,7 +565,7 @@ struct IslandPanelView: View {
 
     /// Whether the panel was opened by a notification (show only actionable session + footer).
     private var isNotificationMode: Bool {
-        model.notchOpenReason == .notification && actionableSessionID != nil
+        model.notchOpenReason == .notification && model.islandSurface.isNotificationSurface
     }
 
     private static let maxSessionListHeight: CGFloat = 560
@@ -597,7 +631,16 @@ struct IslandPanelView: View {
                 sessionPanelHeader(referenceDate: referenceDate)
             }
 
-            if isNotificationMode, let session = model.activeIslandCardSession {
+            if isNotificationMode, let alert = model.islandSurface.codexUsageAlert {
+                CodexUsagePaceAlertCard(
+                    alert: alert,
+                    referenceDate: referenceDate,
+                    lang: model.lang
+                )
+                .padding(.horizontal, sessionListSideInset)
+                .padding(.vertical, 10)
+                .id(alert.id)
+            } else if isNotificationMode, let session = model.activeIslandCardSession {
                 IslandSessionRow(
                     session: session,
                     referenceDate: referenceDate,
@@ -1246,6 +1289,165 @@ private struct SessionOverviewItem: Identifiable {
     let compactTitle: String
     let count: Int
     let tint: Color?
+}
+
+private struct CodexUsagePaceAlertCard: View {
+    let alert: CodexUsagePaceAlert
+    let referenceDate: Date
+    let lang: LanguageManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(systemName: alert.severity == .critical
+                    ? "exclamationmark.octagon.fill"
+                    : "gauge.with.dots.needle.67percent")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(tint)
+
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.96))
+
+                Spacer(minLength: 8)
+
+                Text(percent(alert.usedPercentage))
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                    .foregroundStyle(tint)
+            }
+
+            HStack(spacing: 8) {
+                metric(lang.t("usageAlert.sevenDayUsed", percent(alert.usedPercentage)))
+
+                if let shortTermUsed = alert.shortTermUsedPercentage {
+                    metric(lang.t("usageAlert.shortWindowUsed", percent(shortTermUsed)))
+                }
+
+                if let today = alert.todayIncreasePercentage {
+                    metric(lang.t("usageAlert.todayIncrease", percent(today)))
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                if let rate = alert.recentDailyRatePercentage {
+                    detail(
+                        lang.t(
+                            "usageAlert.recentRate",
+                            percent(rate)
+                        ),
+                        icon: "speedometer"
+                    )
+                }
+
+                if let exhaustionAt = alert.projectedExhaustionAt,
+                   let remaining = duration(until: exhaustionAt) {
+                    detail(
+                        lang.t("usageAlert.estimatedDepletion", remaining),
+                        icon: "hourglass.bottomhalf.filled"
+                    )
+                }
+
+                if let resetsAt = alert.resetsAt,
+                   let remaining = duration(until: resetsAt) {
+                    detail(
+                        lang.t("usageAlert.untilReset", remaining),
+                        icon: "arrow.clockwise"
+                    )
+                }
+
+                if let daily = alert.recommendedDailyPercentage {
+                    detail(
+                        lang.t("usageAlert.dailyRecommendation", percent(daily)),
+                        icon: "calendar"
+                    )
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(lang.t("usageAlert.lightweightModelSuggestion"))
+                Text(lang.t("usageAlert.strongModelSuggestion"))
+            }
+            .font(.system(size: 11.5, weight: .medium))
+            .foregroundStyle(.white.opacity(0.72))
+
+            Text(lang.t(alert.hasSufficientTrendData
+                ? "usageAlert.estimateNote"
+                : "usageAlert.insufficientData"))
+                .font(.system(size: 10.5))
+                .foregroundStyle(.white.opacity(0.4))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .background(tint.opacity(0.075), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(tint.opacity(0.28), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("codex-usage-pace-alert")
+    }
+
+    private var title: String {
+        switch alert.severity {
+        case .attention:
+            lang.t("usageAlert.attentionTitle")
+        case .fast:
+            lang.t("usageAlert.fastTitle")
+        case .critical:
+            lang.t("usageAlert.criticalTitle")
+        }
+    }
+
+    private var tint: Color {
+        switch alert.severity {
+        case .attention:
+            Color(red: 0.98, green: 0.76, blue: 0.25)
+        case .fast:
+            Color(red: 1.0, green: 0.48, blue: 0.16)
+        case .critical:
+            Color(red: 1.0, green: 0.28, blue: 0.31)
+        }
+    }
+
+    private func metric(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.white.opacity(0.84))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.black.opacity(0.18), in: Capsule())
+    }
+
+    private func detail(_ text: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .frame(width: 13)
+                .foregroundStyle(tint.opacity(0.82))
+            Text(text)
+                .foregroundStyle(.white.opacity(0.78))
+        }
+        .font(.system(size: 11.5, weight: .medium))
+    }
+
+    private func percent(_ value: Double) -> String {
+        if abs(value.rounded() - value) < 0.05 {
+            return "\(Int(value.rounded()))%"
+        }
+        return String(format: "%.1f%%", value)
+    }
+
+    private func duration(until date: Date) -> String? {
+        let interval = date.timeIntervalSince(referenceDate)
+        guard interval > 0 else { return nil }
+
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        formatter.allowedUnits = interval >= 86_400
+            ? [.day, .hour]
+            : [.hour, .minute]
+        return formatter.string(from: interval)
+    }
 }
 
 // MARK: - Session row (opened state)

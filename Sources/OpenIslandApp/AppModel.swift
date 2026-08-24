@@ -21,6 +21,7 @@ final class AppModel {
     private static let islandRightSlotDefaultsKey = "appearance.island.v6.rightSlot"
     private static let islandCenterLabelDefaultsKey = "appearance.island.v6.centerLabel"
     private static let showCodexUsageDefaultsKey = "app.showCodexUsage"
+    private static let codexUsagePaceAlertsEnabledDefaultsKey = "app.codexUsagePaceAlertsEnabled"
     private static let completionReplyEnabledDefaultsKey = "feature.completionReply.enabled"
     private static let suppressFrontmostNotificationsDefaultsKey = "app.suppressFrontmostNotifications"
     private static let showOnlyForNotificationsDefaultsKey = "overlay.showOnlyForNotifications"
@@ -66,6 +67,7 @@ final class AppModel {
     @ObservationIgnored private var _agentsGridNextTicket: Int = 0
     var selectedSessionID: String?
     let hooks = HookInstallationCoordinator()
+    @ObservationIgnored private let codexUsagePaceCoordinator = CodexUsagePaceCoordinator()
     let overlay = OverlayUICoordinator()
     let discovery = SessionDiscoveryCoordinator()
     let monitoring = ProcessMonitoringCoordinator()
@@ -253,6 +255,23 @@ final class AppModel {
         didSet {
             guard hasFinishedInit, showCodexUsage != oldValue else { return }
             UserDefaults.standard.set(showCodexUsage, forKey: Self.showCodexUsageDefaultsKey)
+            if showCodexUsage {
+                hooks.refreshCodexUsageState()
+                hooks.startCodexUsageMonitoringIfNeeded()
+            }
+        }
+    }
+    var codexUsagePaceAlertsEnabled: Bool = true {
+        didSet {
+            guard hasFinishedInit, codexUsagePaceAlertsEnabled != oldValue else { return }
+            UserDefaults.standard.set(
+                codexUsagePaceAlertsEnabled,
+                forKey: Self.codexUsagePaceAlertsEnabledDefaultsKey
+            )
+            if codexUsagePaceAlertsEnabled {
+                hooks.refreshCodexUsageState()
+                hooks.startCodexUsageMonitoringIfNeeded()
+            }
         }
     }
     var completionReplyEnabled: Bool = false {
@@ -616,6 +635,7 @@ final class AppModel {
             Self.completionReplyEnabledDefaultsKey: false,
             Self.suppressFrontmostNotificationsDefaultsKey: true,
             Self.showOnlyForNotificationsDefaultsKey: false,
+            Self.codexUsagePaceAlertsEnabledDefaultsKey: true,
         ])
         isSoundMuted = UserDefaults.standard.bool(forKey: Self.soundMutedDefaultsKey)
         selectedSoundName = NotificationSoundService.selectedSoundName
@@ -630,6 +650,9 @@ final class AppModel {
                 atPath: CodexRolloutDiscovery.defaultRootURL.path
             )
         }
+        codexUsagePaceAlertsEnabled = UserDefaults.standard.bool(
+            forKey: Self.codexUsagePaceAlertsEnabledDefaultsKey
+        )
         completionReplyEnabled = UserDefaults.standard.bool(forKey: Self.completionReplyEnabledDefaultsKey)
         launchAtLoginEnabled = LaunchAtLoginService.shared.isEnabled
         appearanceSettingsProfile = IslandAppearanceDisplayProfile(
@@ -661,6 +684,9 @@ final class AppModel {
 
         hooks.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
+        }
+        hooks.onCodexUsageSnapshotUpdated = { [weak self] snapshot in
+            self?.handleCodexUsageSnapshot(snapshot)
         }
 
         discovery.syntheticClaudeSessionPrefix = Self.syntheticClaudeSessionPrefix
@@ -1127,7 +1153,7 @@ final class AppModel {
             hooks.refreshCursorHookStatus()
             hooks.refreshClaudeUsageState()
             hooks.startClaudeUsageMonitoringIfNeeded()
-            if showCodexUsage {
+            if showCodexUsage || codexUsagePaceAlertsEnabled {
                 hooks.refreshCodexUsageState()
                 hooks.startCodexUsageMonitoringIfNeeded()
             }
@@ -1264,7 +1290,10 @@ final class AppModel {
     private func refreshOverlayPlacementIfVisible() { overlay.refreshOverlayPlacementIfVisible() }
     func notePointerInsideIslandSurface() { overlay.notePointerInsideIslandSurface() }
     func handlePointerExitedIslandSurface() { overlay.handlePointerExitedIslandSurface() }
-    private func presentNotificationSurface(_ surface: IslandSurface) { overlay.presentNotificationSurface(surface) }
+    @discardableResult
+    private func presentNotificationSurface(_ surface: IslandSurface) -> Bool {
+        overlay.presentNotificationSurface(surface)
+    }
     private func reconcileIslandSurfaceAfterStateChange() { overlay.reconcileIslandSurfaceAfterStateChange() }
     private func dismissNotificationSurfaceIfPresent(for sessionID: String) { overlay.dismissNotificationSurfaceIfPresent(for: sessionID) }
     private func dismissOverlayForJump() { overlay.dismissOverlayForJump() }
@@ -1274,6 +1303,21 @@ final class AppModel {
     var showsNotificationCard: Bool { overlay.showsNotificationCard }
     var shouldDeferTimedNotificationAutoCollapse: Bool { overlay.shouldDeferTimedNotificationAutoCollapse }
     var hasPendingNotificationAutoCollapse: Bool { overlay.hasPendingNotificationAutoCollapse }
+
+    private func handleCodexUsageSnapshot(_ snapshot: CodexUsageSnapshot?) {
+        guard let snapshot,
+              let alert = codexUsagePaceCoordinator.ingest(
+                  snapshot,
+                  alertsEnabled: codexUsagePaceAlertsEnabled
+              ) else {
+            return
+        }
+
+        if presentNotificationSurface(.codexUsageAlert(alert)) {
+            codexUsagePaceCoordinator.recordPresentation(of: alert)
+            lastActionMessage = "Codex usage pace alert presented: \(alert.risk.rawValue)."
+        }
+    }
 
     func loadDebugSnapshot(
         _ snapshot: IslandDebugSnapshot,

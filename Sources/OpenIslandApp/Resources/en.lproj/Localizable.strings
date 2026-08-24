@@ -28,6 +28,8 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
+"settings.general.codexUsagePaceAlerts" = "Codex usage pace alerts";
+"settings.general.codexUsagePaceAlertsDescription" = "Show a colored alert when usage is rising quickly; no persistent warning remains at the top.";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
@@ -200,6 +202,22 @@
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
+
+/* Codex Usage Pace Alerts */
+"usageAlert.attentionTitle" = "Codex usage deserves attention";
+"usageAlert.fastTitle" = "Codex usage is moving fast";
+"usageAlert.criticalTitle" = "Codex usage may run out early";
+"usageAlert.sevenDayUsed" = "7-day usage: %@";
+"usageAlert.shortWindowUsed" = "5-hour usage: %@";
+"usageAlert.todayIncrease" = "Today: +%@";
+"usageAlert.recentRate" = "Recent pace: %@/day";
+"usageAlert.estimatedDepletion" = "Estimated to run out in %@";
+"usageAlert.untilReset" = "Reset in %@";
+"usageAlert.dailyRecommendation" = "Suggested daily pace: %@/day";
+"usageAlert.lightweightModelSuggestion" = "Consider a lighter model for quick lookups, extraction, and routine tasks.";
+"usageAlert.strongModelSuggestion" = "Reserve stronger models or high reasoning for complex coding and difficult debugging.";
+"usageAlert.insufficientData" = "Recent samples are limited; this alert uses the current cycle's cumulative pace.";
+"usageAlert.estimateNote" = "This is an estimate based on recent usage speed.";
 "island.session.dismiss" = "Dismiss session";
 "island.idleCleanup.button" = "Clear idle records (%lld)";
 "island.idleCleanup.rowAction" = "Remove this idle record";

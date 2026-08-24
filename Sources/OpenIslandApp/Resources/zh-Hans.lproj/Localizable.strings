@@ -28,6 +28,8 @@
 "settings.general.hapticFeedback" = "悬停时震动反馈";
 "settings.general.suppressFrontmostNotifications" = "前台会话不弹出通知";
 "settings.general.showCodexUsage" = "显示 Codex 用量";
+"settings.general.codexUsagePaceAlerts" = "Codex 用量速度提醒";
+"settings.general.codexUsagePaceAlertsDescription" = "用量消耗偏快时弹出彩色提醒，顶部不会保留持续警告。";
 "settings.general.completionReply" = "在完成卡片中回复";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已激活";
@@ -200,6 +202,22 @@
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
+
+/* Codex 用量速度提醒 */
+"usageAlert.attentionTitle" = "Codex 用量需要注意";
+"usageAlert.fastTitle" = "Codex 用量消耗较快";
+"usageAlert.criticalTitle" = "Codex 用量可能提前用完";
+"usageAlert.sevenDayUsed" = "7 天已用：%@";
+"usageAlert.shortWindowUsed" = "5 小时已用：%@";
+"usageAlert.todayIncrease" = "今日增加：%@";
+"usageAlert.recentRate" = "最近速度：%@/天";
+"usageAlert.estimatedDepletion" = "预计 %@ 后用完";
+"usageAlert.untilReset" = "距离重置：%@";
+"usageAlert.dailyRecommendation" = "建议每日用量：%@/天";
+"usageAlert.lightweightModelSuggestion" = "快速查询、提取和常规任务可以考虑切换到轻量模型。";
+"usageAlert.strongModelSuggestion" = "复杂编码和困难调试再使用更强模型或高推理档位。";
+"usageAlert.insufficientData" = "近期样本较少，本次提醒依据当前周期的累计速度。";
+"usageAlert.estimateNote" = "这是根据近期用量速度计算的估算值。";
 "island.session.dismiss" = "关闭会话";
 "island.idleCleanup.button" = "清理空闲记录（%lld）";
 "island.idleCleanup.rowAction" = "移除这条空闲记录";
