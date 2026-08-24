@@ -61,6 +61,7 @@ public struct CodexUsageSnapshot: Equatable, Codable, Sendable {
 
 public enum CodexUsageLoader {
     public static let defaultRootURL = CodexRolloutDiscovery.defaultRootURL
+    private static let ordinaryCodexLimitID = "codex"
 
     private struct Candidate {
         var fileURL: URL
@@ -69,8 +70,14 @@ public enum CodexUsageLoader {
 
     public static func load(
         fromRootURL rootURL: URL = defaultRootURL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        maximumCandidates: Int = 40,
+        maximumBytesPerCandidate: Int = 2 * 1_024 * 1_024
     ) throws -> CodexUsageSnapshot? {
+        guard maximumCandidates > 0, maximumBytesPerCandidate > 0 else {
+            return nil
+        }
+
         guard fileManager.fileExists(atPath: rootURL.path),
               let enumerator = fileManager.enumerator(
                 at: rootURL,
@@ -108,24 +115,64 @@ public enum CodexUsageLoader {
             return lhs.modifiedAt > rhs.modifiedAt
         }
 
-        for candidate in sortedCandidates {
+        var unidentifiedFallback: CodexUsageSnapshot?
+        for candidate in sortedCandidates.prefix(maximumCandidates) {
             if let snapshot = loadLatestSnapshot(
                 from: candidate.fileURL,
-                modifiedAt: candidate.modifiedAt
+                modifiedAt: candidate.modifiedAt,
+                maximumBytes: maximumBytesPerCandidate
             ) {
-                return snapshot
+                if snapshot.limitID == ordinaryCodexLimitID {
+                    return snapshot
+                }
+                if snapshot.limitID == nil, unidentifiedFallback == nil {
+                    unidentifiedFallback = snapshot
+                }
             }
         }
 
-        return nil
+        return unidentifiedFallback
     }
 
-    private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+    private static func loadLatestSnapshot(
+        from fileURL: URL,
+        modifiedAt: Date,
+        maximumBytes: Int
+    ) -> CodexUsageSnapshot? {
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
+            return nil
+        }
+        defer { try? fileHandle.close() }
+
+        let contents: String
+        do {
+            let fileSize = try fileHandle.seekToEnd()
+            let desiredStart = fileSize > UInt64(maximumBytes)
+                ? fileSize - UInt64(maximumBytes)
+                : 0
+            let readStart = desiredStart > 0 ? desiredStart - 1 : 0
+            try fileHandle.seek(toOffset: readStart)
+            var data = try fileHandle.readToEnd() ?? Data()
+
+            if desiredStart > 0 {
+                let newline = UInt8(ascii: "\n")
+                if data.first == newline {
+                    data = Data(data.dropFirst())
+                } else if let newlineIndex = data.firstIndex(of: newline) {
+                    let removedCount = data.distance(from: data.startIndex, to: newlineIndex) + 1
+                    data = Data(data.dropFirst(removedCount))
+                } else {
+                    return nil
+                }
+            }
+
+            contents = String(decoding: data, as: UTF8.self)
+        } catch {
             return nil
         }
 
-        var latestSnapshot: CodexUsageSnapshot?
+        var latestOrdinaryCodexSnapshot: CodexUsageSnapshot?
+        var latestUnidentifiedSnapshot: CodexUsageSnapshot?
         contents.enumerateLines { line, _ in
             guard let snapshot = snapshot(
                 from: line,
@@ -135,10 +182,14 @@ public enum CodexUsageLoader {
                 return
             }
 
-            latestSnapshot = snapshot
+            if snapshot.limitID == ordinaryCodexLimitID {
+                latestOrdinaryCodexSnapshot = snapshot
+            } else if snapshot.limitID == nil {
+                latestUnidentifiedSnapshot = snapshot
+            }
         }
 
-        return latestSnapshot
+        return latestOrdinaryCodexSnapshot ?? latestUnidentifiedSnapshot
     }
 
     private static func snapshot(

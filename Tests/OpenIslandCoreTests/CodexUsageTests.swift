@@ -148,6 +148,62 @@ struct CodexUsageTests {
     }
 
     @Test
+    func codexUsageLoaderPrefersOrdinaryCodexOverNewerModelSpecificPool() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-ordinary-pool")
+        let ordinaryURL = rootURL.appendingPathComponent("rollout-ordinary.jsonl")
+        let sparkURL = rootURL.appendingPathComponent("rollout-spark.jsonl")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try writeRollout([
+            rolloutLine(
+                timestamp: "2026-04-03T01:00:00.000Z",
+                type: "event_msg",
+                payload: tokenCountPayload(limitID: "codex", used: 3)
+            ),
+        ], to: ordinaryURL)
+        try writeRollout([
+            rolloutLine(
+                timestamp: "2026-04-03T02:00:00.000Z",
+                type: "event_msg",
+                payload: tokenCountPayload(limitID: "codex_bengalfox", used: 0)
+            ),
+        ], to: sparkURL)
+        try setModificationDate(Date(timeIntervalSince1970: 1_000), for: ordinaryURL)
+        try setModificationDate(Date(timeIntervalSince1970: 2_000), for: sparkURL)
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.first?.roundedUsedPercentage == 3)
+        #expect(resolvedPath(snapshot?.sourceFilePath) == ordinaryURL.resolvingSymlinksInPath().path)
+    }
+
+    @Test
+    func codexUsageLoaderPrefersOrdinaryPoolWithinOneRollout() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-mixed-pool")
+        let rolloutURL = rootURL.appendingPathComponent("rollout-mixed.jsonl")
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        try writeRollout([
+            rolloutLine(
+                timestamp: "2026-04-03T01:00:00.000Z",
+                type: "event_msg",
+                payload: tokenCountPayload(limitID: "codex", used: 3)
+            ),
+            rolloutLine(
+                timestamp: "2026-04-03T02:00:00.000Z",
+                type: "event_msg",
+                payload: tokenCountPayload(limitID: "codex_bengalfox", used: 0)
+            ),
+        ], to: rolloutURL)
+
+        let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
+
+        #expect(snapshot?.limitID == "codex")
+        #expect(snapshot?.windows.first?.roundedUsedPercentage == 3)
+    }
+
+    @Test
     func codexUsageLoaderFormatsNonStandardWindowLengths() throws {
         let rootURL = temporaryRootURL(named: "codex-usage-labels")
         let rolloutURL = rootURL
@@ -186,6 +242,62 @@ struct CodexUsageTests {
         let snapshot = try CodexUsageLoader.load(fromRootURL: rootURL)
 
         #expect(snapshot?.windows.map(\.label) == ["1h 30m", "1d 1h"])
+    }
+
+    @Test
+    func codexUsageLoaderFindsLatestRateLimitFromABoundedHugeFileTail() throws {
+        let rootURL = temporaryRootURL(named: "codex-usage-bounded-tail")
+        let rolloutURL = rootURL
+            .appendingPathComponent("2026/04/03", isDirectory: true)
+            .appendingPathComponent("rollout-huge.jsonl")
+
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        try writeRollout(
+            [
+                rolloutLine(
+                    timestamp: "2026-04-03T01:49:35.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "agent_reasoning",
+                        "text": String(repeating: "x", count: 4 * 1_024 * 1_024),
+                    ]
+                ),
+                rolloutLine(
+                    timestamp: "2026-04-03T01:50:35.000Z",
+                    type: "event_msg",
+                    payload: [
+                        "type": "token_count",
+                        "rate_limits": [
+                            "limit_id": "codex",
+                            "plan_type": "pro",
+                            "primary": [
+                                "used_percent": 31.0,
+                                "window_minutes": 300,
+                                "resets_at": 1_775_158_295,
+                            ],
+                            "secondary": [
+                                "used_percent": 47.0,
+                                "window_minutes": 10_080,
+                                "resets_at": 1_775_635_184,
+                            ],
+                        ],
+                    ]
+                ),
+            ],
+            to: rolloutURL
+        )
+
+        let snapshot = try CodexUsageLoader.load(
+            fromRootURL: rootURL,
+            maximumCandidates: 1,
+            maximumBytesPerCandidate: 64 * 1_024
+        )
+
+        #expect(snapshot?.windows.map(\.roundedUsedPercentage) == [31, 47])
+        #expect(snapshot?.capturedAt == isoDate("2026-04-03T01:50:35.000Z"))
     }
 }
 
@@ -230,4 +342,19 @@ private func rolloutLine(
     ]
     let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     return String(decoding: data, as: UTF8.self)
+}
+
+private func tokenCountPayload(limitID: String, used: Double) -> [String: Any] {
+    [
+        "type": "token_count",
+        "rate_limits": [
+            "limit_id": limitID,
+            "plan_type": "pro",
+            "secondary": [
+                "used_percent": used,
+                "window_minutes": 10_080,
+                "resets_at": 1_775_635_184,
+            ],
+        ],
+    ]
 }

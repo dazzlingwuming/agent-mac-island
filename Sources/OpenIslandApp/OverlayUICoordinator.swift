@@ -434,20 +434,22 @@ final class OverlayUICoordinator {
 
     // MARK: - Notification surfaces
 
-    func presentNotificationSurface(_ surface: IslandSurface) {
+    @discardableResult
+    func presentNotificationSurface(_ surface: IslandSurface) -> Bool {
         guard surface.isNotificationCard else {
-            return
+            return false
         }
 
         cancelPointerExitAutoHide()
 
         guard !shouldPreserveCurrentNotificationSurface(against: surface) else {
-            return
+            return false
         }
 
         appModel?.measuredNotificationContentHeight = 0
         NotificationSoundService.playNotification(isMuted: isSoundMuted)
         notchOpen(reason: .notification, surface: surface)
+        return true
     }
 
     func shouldPreserveCurrentNotificationSurface(against candidate: IslandSurface) -> Bool {
@@ -457,6 +459,16 @@ final class OverlayUICoordinator {
               islandSurface.isNotificationCard,
               islandSurface != candidate else {
             return false
+        }
+
+        if candidate.sessionID
+            .flatMap({ appModel?.state.session(id: $0) })?
+            .phase.requiresAttention == true {
+            return false
+        }
+
+        if activeIslandCardSession?.phase.requiresAttention == true {
+            return true
         }
 
         return isPointerInsideCurrentNotificationCard

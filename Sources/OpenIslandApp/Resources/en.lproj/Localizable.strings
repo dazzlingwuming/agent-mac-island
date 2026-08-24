@@ -28,6 +28,8 @@
 "settings.general.hapticFeedback" = "Haptic feedback on hover";
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
+"settings.general.codexUsagePaceAlerts" = "Codex usage pace alerts";
+"settings.general.codexUsagePaceAlertsDescription" = "Show a colored alert when usage is rising quickly; no persistent warning remains at the top.";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
@@ -210,6 +212,31 @@
 "island.idleCleanup.clearedCount" = "Cleared %lld local idle records.";
 "island.idleCleanup.persistFailed" = "Could not save idle record cleanup: %@";
 
+/* Codex Usage Pace Alerts */
+"usageAlert.attentionTitle" = "Codex usage deserves attention";
+"usageAlert.fastTitle" = "Codex usage is moving fast";
+"usageAlert.criticalTitle" = "Codex usage may run out early";
+"usageAlert.sevenDayUsed" = "7-day usage: %@";
+"usageAlert.shortWindowUsed" = "5-hour usage: %@";
+"usageAlert.todayIncrease" = "Today: +%@";
+"usageAlert.recentRate" = "Recent pace: %@/day";
+"usageAlert.estimatedDepletion" = "Estimated to run out in %@";
+"usageAlert.untilReset" = "Reset in %@";
+"usageAlert.dailyRecommendation" = "Suggested daily pace: %@/day";
+"usageAlert.lightweightModelSuggestion" = "Consider a lighter model for quick lookups, extraction, and routine tasks.";
+"usageAlert.strongModelSuggestion" = "Reserve stronger models or high reasoning for complex coding and difficult debugging.";
+"usageAlert.insufficientData" = "Recent samples are limited; this alert uses the current cycle's cumulative pace.";
+"usageAlert.estimateNote" = "This is an estimate based on recent usage speed.";
+"island.session.dismiss" = "Dismiss session";
+"island.idleCleanup.button" = "Clear idle records (%lld)";
+"island.idleCleanup.rowAction" = "Remove this idle record";
+"island.idleCleanup.confirmTitle" = "Clear %lld local idle records?";
+"island.idleCleanup.confirmAction" = "Clear Records";
+"island.idleCleanup.confirmMessage" = "This only removes the records from Open Island. It does not delete the original agent sessions or stop any processes. A session will reappear automatically when it has new activity.";
+"island.idleCleanup.clearedOne" = "Cleared 1 local idle record.";
+"island.idleCleanup.clearedCount" = "Cleared %lld local idle records.";
+"island.idleCleanup.persistFailed" = "Could not save idle record cleanup: %@";
+
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "Tool permission requested";
 "approval.deny" = "No";
@@ -228,6 +255,8 @@
 "question.otherPlaceholder" = "Type your answer…";
 "question.sendReply" = "Send reply";
 "question.sendAnswer" = "Send answer";
+"question.answerInSource" = "Answer this question in %@. The Island will close it automatically after Codex continues.";
+"question.returnToSource" = "Return to %@";
 
 /* Island Panel - Completion */
 "completion.done" = "Done";

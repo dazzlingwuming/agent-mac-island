@@ -252,33 +252,50 @@ public struct QuestionPromptItem: Equatable, Codable, Sendable {
     }
 }
 
+public enum QuestionResponseChannel: String, Equatable, Codable, Sendable {
+    case bridge
+    case sourceApplication
+}
+
 public struct QuestionPrompt: Equatable, Identifiable, Codable, Sendable {
     public var id: UUID
     public var title: String
     public var options: [String]
     public var questions: [QuestionPromptItem]
+    /// Nil preserves the historical behavior for persisted prompts: answers
+    /// are sent back through the bridge. Rollout-only prompts explicitly use
+    /// `.sourceApplication` because no hook request is waiting for a response.
+    public var responseChannel: QuestionResponseChannel?
 
     public init(
         id: UUID = UUID(),
         title: String,
         options: [String],
-        questions: [QuestionPromptItem] = []
+        questions: [QuestionPromptItem] = [],
+        responseChannel: QuestionResponseChannel? = nil
     ) {
         self.id = id
         self.title = title
         self.options = options
         self.questions = questions
+        self.responseChannel = responseChannel
     }
 
     public init(
         id: UUID = UUID(),
         title: String,
-        questions: [QuestionPromptItem]
+        questions: [QuestionPromptItem],
+        responseChannel: QuestionResponseChannel? = nil
     ) {
         self.id = id
         self.title = title
         self.questions = questions
         self.options = questions.first?.options.map(\.label) ?? []
+        self.responseChannel = responseChannel
+    }
+
+    public var supportsInlineResponse: Bool {
+        responseChannel != .sourceApplication
     }
 }
 

@@ -46,8 +46,11 @@ the Island notification-driven:
 | Delayed hide | After the pointer leaves, the Island waits about **1.5 seconds** before hiding. Re-entering during that delay cancels the hide. |
 | Cross-Space support | The `NSPanel` remains ordered with `.canJoinAllSpaces` and `.fullScreenAuxiliary`; hiding uses zero alpha and disabled mouse handling instead of `orderOut`. |
 | Notification lifecycle | Completion and failure notifications can appear while hidden and ordinary notifications retain the roughly 10-second auto-close behavior. Permission requests and questions remain visible until handled. |
+| Codex usage pace alerts | Tracks only aggregate local quota percentages and timestamps, estimates whether the 7-day allowance is being consumed too quickly, and opens a temporary amber/orange/red Island with today's increase, recent pace, reset time, and a lighter-model suggestion. No warning remains in the closed top bar. |
+| Codex `/plan` questions | Detects current `request_user_input` records in Codex rollout JSONL, shows the complete question and options as a persistent notification, and provides a **Return to Codex** action. Answers remain in Codex because this event has no response hook. |
 | Idle-record cleanup | Added per-row and bulk cleanup for local idle records. Cleanup only changes the Island presentation state; it does not delete original agent sessions or terminate processes. New activity makes a cleared session visible again. |
 | Persistent cleanup state | Cleared idle records remain hidden after an app restart through a local, versioned dismissal store. |
+| Large-rollout performance | Cold-start discovery reads bounded head/tail slices from very large Codex JSONL files, then consumes only appended bytes. Rediscovery is single-flight, preventing overlapping scans from pinning CPU. |
 | Localized UI | Updated English, Simplified Chinese, and Traditional Chinese text for auto-hide and idle cleanup. |
 | Development launch | `scripts/launch-dev-app.sh` can launch with the committed icons when Pillow is unavailable. |
 | Regression harness | Added smoke coverage for hidden/ordered state separation, click-through, hover timing, delayed hide cancellation, notification reveal, actionable notifications, and idle cleanup. |
@@ -61,7 +64,9 @@ the Island notification-driven:
 | Pointer hovers at top center for 1.5 seconds | The Island opens manually. |
 | User clicks the hidden top-center area | The underlying app receives the click; the Island stays hidden. |
 | Codex completes or fails | A notification appears automatically, then ordinary notifications close after their display period. |
+| Codex usage is ahead of a sustainable pace | A colored usage warning appears once per quota period and severity level, then follows the ordinary timed-notification lifecycle. Hovering pauses dismissal. |
 | Codex requests permission or asks a question | The actionable notification stays visible until it is handled. |
+| Codex `/plan` calls `request_user_input` | The Island shows the full question and choices; choose **Return to Codex**, answer there, and the notification resolves when Codex continues. |
 | User switches Spaces or enters a full-screen app | The hidden trigger and notifications remain available on the active Space. |
 | UI is hidden | Hooks, session monitoring, the app process, and `OpenIsland/bridge.sock` keep running. |
 
@@ -98,6 +103,18 @@ Auto-hide (show on hover or notifications)
 
 The preference persists across app restarts. It defaults to off.
 
+### Codex usage pace alerts
+
+Usage pace alerts are enabled by default under:
+
+```text
+Open Island Settings → General → Behavior → Codex usage pace alerts
+```
+
+The local history contains only aggregate quota percentages, window lengths,
+reset timestamps, and alert de-duplication state. It does not store prompts,
+transcripts, or project paths.
+
 ### Clear local idle records
 
 Open the expanded session list:
@@ -120,8 +137,8 @@ zsh scripts/harness.sh smoke-all
 ```
 
 The smoke scenarios cover the auto-hide window state, click-through behavior,
-hover and exit delays, completion and actionable notifications, and isolated
-idle-record cleanup.
+hover and exit delays, completion and actionable notifications, the standalone
+Codex usage warning surface, and isolated idle-record cleanup.
 
 The source tree retains the upstream technical documentation index at
 [docs/index.md](docs/index.md) for architecture and maintenance reference.

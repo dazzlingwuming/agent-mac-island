@@ -390,6 +390,59 @@ def main() -> None:
         if selected_session_phase(report) != "waitingForAnswer":
             assert_contains_any(button_labels, ["Go to Terminal", "JWT tokens"], "questionCard button labels")
 
+    elif scenario == "codexQuestionCard":
+        if notch_status != "opened":
+            fail(f"expected opened notch for codexQuestionCard, got {notch_status!r}")
+        if not (island_surface.startswith("questionCard:") or is_actionable_session_surface(island_surface)):
+            fail(f"expected questionCard/actionable session surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(240, 460),
+            context="codexQuestionCard overlay frame",
+        )
+        assert_contains_any(
+            button_labels,
+            ["Return to Codex", "返回 Codex"],
+            "codexQuestionCard return button",
+        )
+        assert_contains_any(
+            text_values,
+            ["Leave blanks with flags", "missing field", "Codex"],
+            "codexQuestionCard question content",
+        )
+        if report.get("pendingNotificationAutoCollapse") is not False:
+            fail("Codex request_user_input notification scheduled an auto-collapse")
+
+    elif scenario == "usagePaceAlert":
+        if notch_status != "opened":
+            fail(f"expected opened notch for usagePaceAlert, got {notch_status!r}")
+        if not island_surface.startswith("codexUsageAlert:"):
+            fail(f"expected Codex usage alert surface, got {island_surface!r}")
+        require_frame_between(
+            overlay_frame,
+            width=(520, 780),
+            height=(200, 430),
+            context="usagePaceAlert overlay frame",
+        )
+        if report.get("sessionCount") != 0:
+            fail("usagePaceAlert should not require a synthetic session")
+        assert_contains_any(
+            labels | text_values,
+            ["usage is moving fast", "用量消耗较快", "用量消耗較快"],
+            "usagePaceAlert title",
+        )
+        assert_contains_any(
+            labels | text_values,
+            ["7-day usage", "7 天已用"],
+            "usagePaceAlert quota details",
+        )
+        if (
+            report.get("pendingNotificationAutoCollapse") is not True
+            and report.get("defersTimedNotificationAutoCollapse") is not True
+        ):
+            fail("usage pace notification neither scheduled nor hover-paused its 10-second auto-collapse")
+
     elif scenario == "completionCard":
         if notch_status != "opened":
             fail(f"expected opened notch for completionCard, got {notch_status!r}")
@@ -406,8 +459,9 @@ def main() -> None:
         if (
             report.get("showOnlyForNotifications")
             and report.get("pendingNotificationAutoCollapse") is not True
+            and report.get("defersTimedNotificationAutoCollapse") is not True
         ):
-            fail("completion notification did not schedule its 10-second auto-collapse")
+            fail("completion notification neither scheduled nor hover-paused its 10-second auto-collapse")
 
     elif scenario == "longCompletionCard":
         if notch_status != "opened":

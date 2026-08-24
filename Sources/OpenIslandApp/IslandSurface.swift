@@ -1,23 +1,70 @@
 import Foundation
 import OpenIslandCore
 
+enum CodexUsageAlertSeverity: String, Equatable, Sendable {
+    case attention
+    case fast
+    case critical
+}
+
+struct CodexUsagePaceAlert: Equatable, Sendable, Identifiable {
+    let id: String
+    let notificationKey: String
+    let risk: CodexUsagePaceRisk
+    let severity: CodexUsageAlertSeverity
+    let observedAt: Date
+    let usedPercentage: Double
+    let shortTermUsedPercentage: Double?
+    let todayIncreasePercentage: Double?
+    let recentDailyRatePercentage: Double?
+    let recommendedDailyPercentage: Double?
+    let projectedExhaustionAt: Date?
+    let resetsAt: Date?
+    let hasSufficientTrendData: Bool
+}
+
 enum IslandSurface: Equatable {
     case sessionList(actionableSessionID: String? = nil)
+    case codexUsageAlert(CodexUsagePaceAlert)
 
     var sessionID: String? {
         switch self {
         case let .sessionList(actionableSessionID):
             actionableSessionID
+        case .codexUsageAlert:
+            nil
         }
     }
 
+    var codexUsageAlert: CodexUsagePaceAlert? {
+        guard case let .codexUsageAlert(alert) = self else {
+            return nil
+        }
+        return alert
+    }
+
+    var isNotificationSurface: Bool {
+        switch self {
+        case let .sessionList(actionableSessionID):
+            actionableSessionID != nil
+        case .codexUsageAlert:
+            true
+        }
+    }
+
+    /// Compatibility spelling retained for the session-oriented callers.
     var isNotificationCard: Bool {
-        sessionID != nil
+        isNotificationSurface
     }
 
     func autoDismissesWhenPresentedAsNotification(session: AgentSession?) -> Bool {
-        guard sessionID != nil else { return false }
-        return session?.phase == .completed
+        switch self {
+        case let .sessionList(actionableSessionID):
+            guard actionableSessionID != nil else { return false }
+            return session?.phase == .completed
+        case .codexUsageAlert:
+            return true
+        }
     }
 
     static func notificationSurface(for event: AgentEvent) -> IslandSurface? {
@@ -34,9 +81,8 @@ enum IslandSurface: Equatable {
     }
 
     func matchesCurrentState(of session: AgentSession?) -> Bool {
-        guard sessionID != nil else {
-            return true
-        }
+        if case .codexUsageAlert = self { return true }
+        guard sessionID != nil else { return true }
 
         guard let session else {
             return false

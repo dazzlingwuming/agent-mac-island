@@ -7,7 +7,7 @@ cd "$repo_root"
 
 timestamp="$(date +%Y%m%d-%H%M%S)"
 base_dir="${OPEN_ISLAND_HARNESS_ARTIFACT_DIR:-$repo_root/output/harness/smoke-all-$timestamp}"
-scenarios=(closed sessionList approvalCard questionCard completionCard longCompletionCard)
+scenarios=(closed sessionList approvalCard questionCard codexQuestionCard usagePaceAlert completionCard longCompletionCard)
 
 mkdir -p "$base_dir"
 
@@ -76,7 +76,7 @@ OPEN_ISLAND_HARNESS_AUTO_EXIT_SECONDS="2.6" \
 OPEN_ISLAND_HARNESS_ARTIFACT_DIR="$cancel_auto_hide_scenario_dir" \
 zsh "$repo_root/scripts/smoke-dev-app.sh"
 
-for scenario in approvalCard completionCard; do
+for scenario in approvalCard codexQuestionCard usagePaceAlert completionCard; do
     notification_scenario_dir="$base_dir/notificationOnly${scenario[1,1]:u}${scenario[2,-1]}"
     echo "Running smoke scenario 'notificationOnly${scenario[1,1]:u}${scenario[2,-1]}'"
     OPEN_ISLAND_HARNESS_SCENARIO="$scenario" \

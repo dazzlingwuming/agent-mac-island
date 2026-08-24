@@ -28,6 +28,8 @@
 "settings.general.hapticFeedback" = "懸停時震動回饋";
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
+"settings.general.codexUsagePaceAlerts" = "Codex 用量速度提醒";
+"settings.general.codexUsagePaceAlertsDescription" = "用量消耗偏快時彈出彩色提醒，頂部不會保留持續警告。";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已啟用";
@@ -210,6 +212,31 @@
 "island.idleCleanup.clearedCount" = "已清理 %lld 筆本機閒置記錄。";
 "island.idleCleanup.persistFailed" = "無法儲存閒置記錄清理狀態：%@";
 
+/* Codex 用量速度提醒 */
+"usageAlert.attentionTitle" = "Codex 用量需要注意";
+"usageAlert.fastTitle" = "Codex 用量消耗較快";
+"usageAlert.criticalTitle" = "Codex 用量可能提前用完";
+"usageAlert.sevenDayUsed" = "7 天已用：%@";
+"usageAlert.shortWindowUsed" = "5 小時已用：%@";
+"usageAlert.todayIncrease" = "今日增加：%@";
+"usageAlert.recentRate" = "最近速度：%@/日";
+"usageAlert.estimatedDepletion" = "預計 %@ 後用完";
+"usageAlert.untilReset" = "距離重置：%@";
+"usageAlert.dailyRecommendation" = "建議每日用量：%@/日";
+"usageAlert.lightweightModelSuggestion" = "快速查詢、提取和一般任務可以考慮切換到輕量模型。";
+"usageAlert.strongModelSuggestion" = "複雜編碼和困難除錯再使用更強模型或高推理檔位。";
+"usageAlert.insufficientData" = "近期樣本較少，本次提醒依據目前週期的累計速度。";
+"usageAlert.estimateNote" = "這是根據近期用量速度計算的估算值。";
+"island.session.dismiss" = "關閉工作階段";
+"island.idleCleanup.button" = "清理閒置記錄（%lld）";
+"island.idleCleanup.rowAction" = "移除這筆閒置記錄";
+"island.idleCleanup.confirmTitle" = "清理 %lld 筆本機閒置記錄？";
+"island.idleCleanup.confirmAction" = "清理記錄";
+"island.idleCleanup.confirmMessage" = "只會從 Open Island 中移除這些記錄，不會刪除原始 Agent 工作階段或終止任何程序。工作階段有新活動時會自動重新顯示。";
+"island.idleCleanup.clearedOne" = "已清理 1 筆本機閒置記錄。";
+"island.idleCleanup.clearedCount" = "已清理 %lld 筆本機閒置記錄。";
+"island.idleCleanup.persistFailed" = "無法儲存閒置記錄清理狀態：%@";
+
 /* Island Panel - Approval */
 "approval.toolPermissionRequested" = "請求工具權限";
 "approval.deny" = "拒絕";
@@ -227,6 +254,8 @@
 "question.otherPlaceholder" = "輸入你的回答…";
 "question.sendReply" = "傳送回覆";
 "question.sendAnswer" = "提交答案";
+"question.answerInSource" = "請在 %@ 中回答。Codex 繼續執行後，靈動島會自動關閉這則提醒。";
+"question.returnToSource" = "返回 %@";
 
 /* Island Panel - Completion */
 "completion.done" = "完成";
