@@ -19,7 +19,11 @@ final class CodexUsagePaceStore: @unchecked Sendable {
         let state: CodexUsagePacePersistedState
     }
 
-    static let currentVersion = 1
+    /// Version 2 changes the notification keys from one key per quota period
+    /// to one key per observed integer percentage in that period. Version 1
+    /// documents remain readable so numeric history is never discarded on
+    /// upgrade.
+    static let currentVersion = 2
 
     static var defaultFileURL: URL {
         CodexSessionStore.defaultDirectoryURL
@@ -44,7 +48,7 @@ final class CodexUsagePaceStore: @unchecked Sendable {
 
         let data = try Data(contentsOf: fileURL)
         let document = try JSONDecoder().decode(Document.self, from: data)
-        guard document.version == Self.currentVersion else {
+        guard document.version == 1 || document.version == Self.currentVersion else {
             return CodexUsagePacePersistedState()
         }
         return document.state
@@ -68,7 +72,13 @@ final class CodexUsagePaceStore: @unchecked Sendable {
 final class CodexUsagePaceCoordinator {
     private static let historyRetention: TimeInterval = 14 * 24 * 60 * 60
     private static let maximumSampleCount = 1_024
-    private static let maximumNotificationCount = 24
+    // Keep a complete 0...100 quota period. A smaller retention limit would
+    // forget early percentages and allow them to be presented again.
+    private static let maximumNotificationCount = 128
+    private static let ordinaryCodexSevenDayWindowMinutes = 7 * 24 * 60
+    /// Codex may report a reset timestamp with a one-second wobble between
+    /// reads. Keep a prior nearby timestamp as the identity of that period.
+    private static let resetTimestampStabilityTolerance: TimeInterval = 60
 
     private let store: CodexUsagePaceStore
     private var persistedState: CodexUsagePacePersistedState
@@ -96,6 +106,7 @@ final class CodexUsagePaceCoordinator {
         }
 
         resetForChangedLimitIfNeeded(snapshot)
+        let snapshot = stabilizedResetTimes(in: snapshot)
 
         let evaluation = CodexUsagePaceEvaluator.evaluate(
             snapshot: snapshot,
@@ -112,7 +123,13 @@ final class CodexUsagePaceCoordinator {
 
         guard alertsEnabled,
               evaluation.status == .fresh,
-              evaluation.risk > .normal,
+              let longTerm = evaluation.longTerm,
+              longTerm.window.windowMinutes == Self.ordinaryCodexSevenDayWindowMinutes,
+              longTerm.window.roundedUsedPercentage > 0,
+              shouldConsiderPercentageCandidate(
+                  for: longTerm,
+                  observedAt: evaluation.capturedAt
+              ),
               let alert = makeAlert(from: evaluation),
               shouldPresent(alert) else {
             return nil
@@ -168,6 +185,31 @@ final class CodexUsagePaceCoordinator {
         }
     }
 
+    private func stabilizedResetTimes(
+        in snapshot: CodexUsageSnapshot
+    ) -> CodexUsageSnapshot {
+        var stabilized = snapshot
+        stabilized.windows = snapshot.windows.map { window in
+            guard let reportedReset = window.resetsAt,
+                  let storedReset = persistedState.samples
+                    .filter({ $0.windowMinutes == window.windowMinutes })
+                    .compactMap(\.resetsAt)
+                    .min(by: {
+                        abs($0.timeIntervalSince(reportedReset))
+                            < abs($1.timeIntervalSince(reportedReset))
+                    }),
+                  abs(storedReset.timeIntervalSince(reportedReset))
+                    <= Self.resetTimestampStabilityTolerance else {
+                return window
+            }
+
+            var stableWindow = window
+            stableWindow.resetsAt = storedReset
+            return stableWindow
+        }
+        return stabilized
+    }
+
     private func pruneState(relativeTo now: Date) {
         let cutoff = now.addingTimeInterval(-Self.historyRetention)
         persistedState.samples = persistedState.samples
@@ -200,63 +242,133 @@ final class CodexUsagePaceCoordinator {
     ) -> CodexUsagePaceAlert? {
         guard let observedAt = evaluation.capturedAt else { return nil }
 
-        let dominant = dominantAssessment(in: evaluation)
         let longTerm = evaluation.longTerm
-        let displayAssessment = longTerm ?? dominant
-        guard let displayAssessment else { return nil }
+        guard let longTerm,
+              longTerm.window.windowMinutes == Self.ordinaryCodexSevenDayWindowMinutes else {
+            return nil
+        }
 
-        let notificationKey = periodKey(
-            for: dominant ?? displayAssessment,
-            risk: evaluation.risk,
+        let usedPercentage = longTerm.window.roundedUsedPercentage
+        let previousUsedPercentage = previousDifferentObservedPercentage(
+            for: longTerm,
             observedAt: observedAt
         )
-        let exhaustionAt = longTerm?.estimatedHoursUntilExhaustion.map {
+        let notificationKey = percentageKey(
+            periodKey: periodKey(
+                for: longTerm,
+                observedAt: observedAt
+            ),
+            usedPercentage: usedPercentage
+        )
+        let exhaustionAt = longTerm.estimatedHoursUntilExhaustion.map {
             observedAt.addingTimeInterval($0 * 60 * 60)
         }
 
         return CodexUsagePaceAlert(
-            id: "\(notificationKey)|\(evaluation.risk.rawValue)",
+            id: "\(notificationKey)|\(longTerm.risk.rawValue)",
             notificationKey: notificationKey,
-            risk: evaluation.risk,
-            severity: alertSeverity(for: evaluation.risk),
+            risk: longTerm.risk,
+            severity: alertSeverity(for: longTerm.risk),
             observedAt: observedAt,
-            usedPercentage: displayAssessment.window.usedPercentage,
+            usedPercentage: longTerm.window.usedPercentage,
+            previousUsedPercentage: previousUsedPercentage.map(Double.init),
             shortTermUsedPercentage: evaluation.shortTerm?.window.usedPercentage,
-            todayIncreasePercentage: longTerm?.todayUsedPercentage,
-            recentDailyRatePercentage: longTerm?.recentBurnRatePerDay,
-            recommendedDailyPercentage: longTerm?.remainingDailyBudget,
+            todayIncreasePercentage: longTerm.todayUsedPercentage,
+            recentDailyRatePercentage: longTerm.recentBurnRatePerDay,
+            recommendedDailyPercentage: longTerm.remainingDailyBudget,
             projectedExhaustionAt: exhaustionAt,
-            resetsAt: longTerm?.window.resetsAt ?? displayAssessment.window.resetsAt,
-            hasSufficientTrendData: longTerm?.recentBurnRatePerDay != nil
+            resetsAt: longTerm.window.resetsAt,
+            hasSufficientTrendData: longTerm.recentBurnRatePerDay != nil
         )
     }
 
-    private func dominantAssessment(
-        in evaluation: CodexUsagePaceEvaluation
-    ) -> CodexUsagePaceWindowAssessment? {
-        let candidates = [evaluation.longTerm, evaluation.shortTerm].compactMap { $0 }
-        return candidates.max { lhs, rhs in lhs.risk < rhs.risk }
+    /// The first positive reading in a quota period is worth surfacing. After
+    /// that, only a higher integer percentage introduces a new notification.
+    /// Equal readings remain candidates until a presentation is recorded,
+    /// allowing a suppressed or replaced card to retry safely.
+    private func shouldConsiderPercentageCandidate(
+        for assessment: CodexUsagePaceWindowAssessment,
+        observedAt: Date?
+    ) -> Bool {
+        guard let observedAt,
+              let previous = latestObservedPercentage(
+                  for: assessment,
+                  before: observedAt
+              ) else {
+            return true
+        }
+        return assessment.window.roundedUsedPercentage >= previous
+    }
+
+    private func previousDifferentObservedPercentage(
+        for assessment: CodexUsagePaceWindowAssessment,
+        observedAt: Date
+    ) -> Int? {
+        let current = assessment.window.roundedUsedPercentage
+        return priorSamples(for: assessment, before: observedAt)
+            .reversed()
+            .map { Int($0.usedPercentage.rounded()) }
+            .first(where: { $0 != current })
+    }
+
+    private func latestObservedPercentage(
+        for assessment: CodexUsagePaceWindowAssessment,
+        before observedAt: Date
+    ) -> Int? {
+        priorSamples(for: assessment, before: observedAt)
+            .last
+            .map { Int($0.usedPercentage.rounded()) }
+    }
+
+    private func priorSamples(
+        for assessment: CodexUsagePaceWindowAssessment,
+        before observedAt: Date
+    ) -> [CodexUsagePaceSample] {
+        persistedState.samples
+            .filter { sample in
+                guard sample.windowMinutes == assessment.window.windowMinutes,
+                      sample.capturedAt < observedAt else {
+                    return false
+                }
+                return isSameResetPeriod(
+                    sample.resetsAt,
+                    assessment.window.resetsAt
+                )
+            }
+            .sorted { $0.capturedAt < $1.capturedAt }
+    }
+
+    private func isSameResetPeriod(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case let (.some(lhs), .some(rhs)):
+            abs(lhs.timeIntervalSince(rhs))
+                <= Self.resetTimestampStabilityTolerance
+        case (.none, .none):
+            true
+        default:
+            false
+        }
+    }
+
+    private func percentageKey(periodKey: String, usedPercentage: Int) -> String {
+        "\(periodKey)|used-\(usedPercentage)"
     }
 
     private func periodKey(
         for assessment: CodexUsagePaceWindowAssessment,
-        risk: CodexUsagePaceRisk,
         observedAt: Date
     ) -> String {
-        let resetComponent = assessment.window.resetsAt?
-            .timeIntervalSince1970
-            .rounded()
-            .description ?? "unknown-\(Int(observedAt.timeIntervalSince1970 / 86_400))"
-        let scope = assessment.window.windowMinutes < 24 * 60 ? "short" : "long"
-        _ = risk
-        return "\(scope)|\(assessment.window.windowMinutes)|\(resetComponent)"
+        let resetComponent = assessment.window.resetsAt.map {
+            // The persisted sample anchor handles near-boundary reports within
+            // a run and across restarts; minute rounding gives the first
+            // report a stable, human-scale period identity as well.
+            Int(($0.timeIntervalSince1970 / 60).rounded())
+        }.map(String.init) ?? "unknown-\(Int(observedAt.timeIntervalSince1970 / 86_400))"
+        return "long|\(assessment.window.windowMinutes)|\(resetComponent)"
     }
 
     private func shouldPresent(_ alert: CodexUsagePaceAlert) -> Bool {
-        guard let previous = persistedState.notifications[alert.notificationKey] else {
-            return true
-        }
-        return previous.risk < alert.risk
+        persistedState.notifications[alert.notificationKey] == nil
     }
 
     private func alertSeverity(

@@ -14,6 +14,7 @@ struct CodexUsagePaceAlert: Equatable, Sendable, Identifiable {
     let severity: CodexUsageAlertSeverity
     let observedAt: Date
     let usedPercentage: Double
+    let previousUsedPercentage: Double?
     let shortTermUsedPercentage: Double?
     let todayIncreasePercentage: Double?
     let recentDailyRatePercentage: Double?

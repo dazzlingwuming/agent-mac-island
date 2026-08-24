@@ -41,6 +41,49 @@ struct CodexUsagePaceCoordinatorTests {
     }
 
     @Test
+    func versionOneStoreRemainsReadableAndIsRewrittenAsVersionTwo() throws {
+        let url = temporaryStoreURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let state = CodexUsagePacePersistedState(
+            samples: [
+                CodexUsagePaceSample(
+                    capturedAt: now,
+                    usedPercentage: 20,
+                    windowMinutes: sevenDays,
+                    resetsAt: now.addingTimeInterval(5 * 24 * 60 * 60)
+                ),
+            ],
+            notifications: [
+                "long|10080|legacy-reset": CodexUsagePaceNotificationRecord(
+                    risk: .fast,
+                    notifiedAt: now
+                ),
+            ],
+            planType: "pro",
+            limitID: "codex"
+        )
+        let legacyData = try JSONEncoder().encode(
+            LegacyDocument(version: 1, state: state)
+        )
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try legacyData.write(to: url)
+
+        let store = CodexUsagePaceStore(fileURL: url)
+        #expect(try store.load() == state)
+
+        try store.save(state)
+        let rewritten = try JSONDecoder().decode(
+            VersionProbe.self,
+            from: Data(contentsOf: url)
+        )
+        #expect(rewritten.version == 2)
+    }
+
+    @Test
     func firstFastCandidateIsReturned() {
         let store = makeStore()
         let coordinator = CodexUsagePaceCoordinator(store: store)
@@ -76,7 +119,7 @@ struct CodexUsagePaceCoordinatorTests {
     }
 
     @Test
-    func riskEscalationCanNotifyAgainInTheSamePeriod() {
+    func aNewIntegerPercentageCanNotifyAgainInTheSamePeriod() {
         let coordinator = CodexUsagePaceCoordinator(store: makeStore())
         let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
         let fast = snapshot(capturedAt: now, used: 40, resetsAt: reset)
@@ -88,7 +131,106 @@ struct CodexUsagePaceCoordinatorTests {
         let escalated = coordinator.ingest(critical, alertsEnabled: true, now: later)
 
         #expect(escalated?.risk == .critical)
-        #expect(escalated?.notificationKey == first?.notificationKey)
+        #expect(escalated?.usedPercentage == 90)
+        #expect(escalated?.notificationKey != first?.notificationKey)
+    }
+
+    @Test
+    func aRiskEscalationAtTheSamePercentageDoesNotNotifyAgain() throws {
+        let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
+        let criticalSnapshot = snapshot(capturedAt: now, used: 90, resetsAt: reset)
+        let keyStore = makeStore()
+        let keyCoordinator = CodexUsagePaceCoordinator(store: keyStore)
+        let criticalCandidate = try #require(
+            keyCoordinator.ingest(criticalSnapshot, alertsEnabled: true, now: now)
+        )
+
+        let store = makeStore()
+        try store.save(CodexUsagePacePersistedState(
+            notifications: [
+                criticalCandidate.notificationKey: CodexUsagePaceNotificationRecord(
+                    risk: .fast,
+                    notifiedAt: now
+                ),
+            ],
+            planType: "pro",
+            limitID: "codex"
+        ))
+        let coordinator = CodexUsagePaceCoordinator(store: store)
+
+        #expect(coordinator.ingest(
+            criticalSnapshot,
+            alertsEnabled: true,
+            now: now
+        ) == nil)
+    }
+
+    @Test
+    func normalPaceStillNotifiesForEveryNewIntegerPercentage() {
+        let coordinator = CodexUsagePaceCoordinator(store: makeStore())
+        let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
+        let first = coordinator.ingest(
+            snapshot(capturedAt: now, used: 20, resetsAt: reset),
+            alertsEnabled: true,
+            now: now
+        )
+        coordinator.recordPresentation(of: try! #require(first))
+
+        let later = now.addingTimeInterval(2 * 60)
+        let next = coordinator.ingest(
+            snapshot(capturedAt: later, used: 21, resetsAt: reset),
+            alertsEnabled: true,
+            now: later
+        )
+
+        #expect(first?.risk == .normal)
+        #expect(next?.risk == .normal)
+        #expect(next?.usedPercentage == 21)
+        #expect(next?.notificationKey != first?.notificationKey)
+    }
+
+    @Test
+    func percentageJumpReturnsOnlyTheCurrentObservedPercentage() {
+        let coordinator = CodexUsagePaceCoordinator(store: makeStore())
+        let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
+        let first = coordinator.ingest(
+            snapshot(capturedAt: now, used: 20, resetsAt: reset),
+            alertsEnabled: true,
+            now: now
+        )
+        coordinator.recordPresentation(of: try! #require(first))
+
+        let later = now.addingTimeInterval(2 * 60)
+        let jumped = coordinator.ingest(
+            snapshot(capturedAt: later, used: 23, resetsAt: reset),
+            alertsEnabled: true,
+            now: later
+        )
+
+        #expect(jumped?.usedPercentage == 23)
+        #expect(jumped?.previousUsedPercentage == 20)
+        #expect(jumped?.notificationKey.contains("used-23") == true)
+    }
+
+    @Test
+    func aDecreasedPercentageDoesNotCreateANewCandidateInTheSamePeriod() {
+        let coordinator = CodexUsagePaceCoordinator(store: makeStore())
+        let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
+        let first = coordinator.ingest(
+            snapshot(capturedAt: now, used: 20, resetsAt: reset),
+            alertsEnabled: true,
+            now: now
+        )
+        coordinator.recordPresentation(of: try! #require(first))
+
+        let later = now.addingTimeInterval(2 * 60)
+        let decreased = coordinator.ingest(
+            snapshot(capturedAt: later, used: 19, resetsAt: reset),
+            alertsEnabled: true,
+            now: later
+        )
+
+        #expect(decreased == nil)
     }
 
     @Test
@@ -112,6 +254,31 @@ struct CodexUsagePaceCoordinatorTests {
 
         #expect(newPeriod?.risk == .fast)
         #expect(newPeriod?.notificationKey != first?.notificationKey)
+    }
+
+    @Test
+    func oneSecondResetTimestampJitterDoesNotCreateANewPeriod() {
+        let coordinator = CodexUsagePaceCoordinator(store: makeStore())
+        let reset = now.addingTimeInterval(5 * 24 * 60 * 60)
+        let first = coordinator.ingest(
+            snapshot(capturedAt: now, used: 40, resetsAt: reset),
+            alertsEnabled: true,
+            now: now
+        )
+        coordinator.recordPresentation(of: try! #require(first))
+
+        let later = now.addingTimeInterval(2 * 60)
+        let jittered = coordinator.ingest(
+            snapshot(
+                capturedAt: later,
+                used: 40,
+                resetsAt: reset.addingTimeInterval(1)
+            ),
+            alertsEnabled: true,
+            now: later
+        )
+
+        #expect(jittered == nil)
     }
 
     @Test
@@ -213,5 +380,14 @@ struct CodexUsagePaceCoordinatorTests {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("open-island-usage-pace-\(UUID().uuidString)", isDirectory: true)
             .appendingPathComponent("state.json")
+    }
+
+    private struct LegacyDocument: Codable {
+        let version: Int
+        let state: CodexUsagePacePersistedState
+    }
+
+    private struct VersionProbe: Decodable {
+        let version: Int
     }
 }

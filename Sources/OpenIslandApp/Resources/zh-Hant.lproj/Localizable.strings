@@ -29,7 +29,7 @@
 "settings.general.suppressFrontmostNotifications" = "前台工作階段不彈出通知";
 "settings.general.showCodexUsage" = "顯示 Codex 用量";
 "settings.general.codexUsagePaceAlerts" = "Codex 用量速度提醒";
-"settings.general.codexUsagePaceAlertsDescription" = "用量消耗偏快時彈出彩色提醒，頂部不會保留持續警告。";
+"settings.general.codexUsagePaceAlertsDescription" = "7 天用量每增加 1% 都會提醒；速度越快顏色越醒目，頂部不會保留持續警告。";
 "settings.general.completionReply" = "在完成卡片中回覆";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "已啟用";
@@ -216,6 +216,8 @@
 "usageAlert.attentionTitle" = "Codex 用量需要注意";
 "usageAlert.fastTitle" = "Codex 用量消耗較快";
 "usageAlert.criticalTitle" = "Codex 用量可能提前用完";
+"usageAlert.increasedTitle" = "Codex 用量已增加";
+"usageAlert.increasedFrom" = "%@ → %@";
 "usageAlert.sevenDayUsed" = "7 天已用：%@";
 "usageAlert.shortWindowUsed" = "5 小時已用：%@";
 "usageAlert.todayIncrease" = "今日增加：%@";

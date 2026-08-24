@@ -142,6 +142,7 @@ enum IslandDebugScenario: String, CaseIterable, Identifiable {
                 severity: .fast,
                 observedAt: now,
                 usedPercentage: 42,
+                previousUsedPercentage: 41,
                 shortTermUsedPercentage: 63,
                 todayIncreasePercentage: 16,
                 recentDailyRatePercentage: 36,

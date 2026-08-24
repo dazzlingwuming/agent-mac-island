@@ -64,7 +64,7 @@ the Island notification-driven:
 | Pointer hovers at top center for 1.5 seconds | The Island opens manually. |
 | User clicks the hidden top-center area | The underlying app receives the click; the Island stays hidden. |
 | Codex completes or fails | A notification appears automatically, then ordinary notifications close after their display period. |
-| Codex usage is ahead of a sustainable pace | A colored usage warning appears once per quota period and severity level, then follows the ordinary timed-notification lifecycle. Hovering pauses dismissal. |
+| Codex 7-day usage increases by a new integer percentage | One colored usage alert appears for the latest percentage. Faster pace uses a stronger color; hovering pauses dismissal. |
 | Codex requests permission or asks a question | The actionable notification stays visible until it is handled. |
 | Codex `/plan` calls `request_user_input` | The Island shows the full question and choices; choose **Return to Codex**, answer there, and the notification resolves when Codex continues. |
 | User switches Spaces or enters a full-screen app | The hidden trigger and notifications remain available on the active Space. |
@@ -114,6 +114,11 @@ Open Island Settings → General → Behavior → Codex usage pace alerts
 The local history contains only aggregate quota percentages, window lengths,
 reset timestamps, and alert de-duplication state. It does not store prompts,
 transcripts, or project paths.
+
+Each newly observed integer percentage of the ordinary 7-day allowance opens a
+notification. If usage jumps across several points between samples, one card
+summarizes the change. A card dismissed or replaced before it remains visibly
+present for about two seconds is retried on the next refresh.
 
 ### Clear local idle records
 

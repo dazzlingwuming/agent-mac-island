@@ -29,7 +29,7 @@
 "settings.general.suppressFrontmostNotifications" = "Suppress notifications for focused sessions";
 "settings.general.showCodexUsage" = "Show Codex usage";
 "settings.general.codexUsagePaceAlerts" = "Codex usage pace alerts";
-"settings.general.codexUsagePaceAlertsDescription" = "Show a colored alert when usage is rising quickly; no persistent warning remains at the top.";
+"settings.general.codexUsagePaceAlertsDescription" = "Alert on every new 1% of 7-day usage; faster pace uses a stronger color, with no persistent top warning.";
 "settings.general.completionReply" = "Reply from completion card";
 "settings.general.cliHooks" = "CLI Hooks";
 "settings.general.activated" = "Activated";
@@ -216,6 +216,8 @@
 "usageAlert.attentionTitle" = "Codex usage deserves attention";
 "usageAlert.fastTitle" = "Codex usage is moving fast";
 "usageAlert.criticalTitle" = "Codex usage may run out early";
+"usageAlert.increasedTitle" = "Codex usage increased";
+"usageAlert.increasedFrom" = "%@ → %@";
 "usageAlert.sevenDayUsed" = "7-day usage: %@";
 "usageAlert.shortWindowUsed" = "5-hour usage: %@";
 "usageAlert.todayIncrease" = "Today: +%@";

@@ -1317,6 +1317,15 @@ private struct CodexUsagePaceAlertCard: View {
             }
 
             HStack(spacing: 8) {
+                if let previous = alert.previousUsedPercentage,
+                   Int(previous.rounded()) != Int(alert.usedPercentage.rounded()) {
+                    metric(lang.t(
+                        "usageAlert.increasedFrom",
+                        percent(previous),
+                        percent(alert.usedPercentage)
+                    ))
+                }
+
                 metric(lang.t("usageAlert.sevenDayUsed", percent(alert.usedPercentage)))
 
                 if let shortTermUsed = alert.shortTermUsedPercentage {
@@ -1388,13 +1397,17 @@ private struct CodexUsagePaceAlertCard: View {
     }
 
     private var title: String {
+        if alert.risk == .normal {
+            return lang.t("usageAlert.increasedTitle")
+        }
+
         switch alert.severity {
         case .attention:
-            lang.t("usageAlert.attentionTitle")
+            return lang.t("usageAlert.attentionTitle")
         case .fast:
-            lang.t("usageAlert.fastTitle")
+            return lang.t("usageAlert.fastTitle")
         case .critical:
-            lang.t("usageAlert.criticalTitle")
+            return lang.t("usageAlert.criticalTitle")
         }
     }
 

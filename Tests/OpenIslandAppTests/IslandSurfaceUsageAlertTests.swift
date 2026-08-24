@@ -147,6 +147,39 @@ struct IslandSurfaceUsageAlertTests {
         #expect(!model.hasPendingNotificationAutoCollapse)
     }
 
+    @Test
+    @MainActor
+    func usageAlertIsConfirmedOnlyAfterRemainingVisiblyPresented() async {
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.overlay.notificationPresentationConfirmationDelay = .milliseconds(10)
+        let expected = alert()
+        var confirmed: CodexUsagePaceAlert?
+        model.overlay.onCodexUsageAlertVisiblyPresented = { confirmed = $0 }
+
+        #expect(model.overlay.presentNotificationSurface(.codexUsageAlert(expected)))
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(confirmed == expected)
+        model.notchClose()
+    }
+
+    @Test
+    @MainActor
+    func usageAlertClosedBeforeVisibilityConfirmationIsNotDelivered() async {
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.overlay.notificationPresentationConfirmationDelay = .milliseconds(50)
+        var confirmationCount = 0
+        model.overlay.onCodexUsageAlertVisiblyPresented = { _ in confirmationCount += 1 }
+
+        #expect(model.overlay.presentNotificationSurface(.codexUsageAlert(alert())))
+        model.notchClose()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        #expect(confirmationCount == 0)
+    }
+
     private func alert() -> CodexUsagePaceAlert {
         CodexUsagePaceAlert(
             id: "long|10080|1|fast",
@@ -155,6 +188,7 @@ struct IslandSurfaceUsageAlertTests {
             severity: .fast,
             observedAt: Date(timeIntervalSince1970: 1_800_000_000),
             usedPercentage: 40,
+            previousUsedPercentage: 39,
             shortTermUsedPercentage: 15,
             todayIncreasePercentage: 12,
             recentDailyRatePercentage: 20,

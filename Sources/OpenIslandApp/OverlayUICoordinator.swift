@@ -10,6 +10,9 @@ final class OverlayUICoordinator {
     private static let notificationSurfaceAutoCollapseDelay: TimeInterval = 10
     static let pointerExitAutoHideDelay: TimeInterval = 1.5
 
+    @ObservationIgnored
+    var notificationPresentationConfirmationDelay: Duration = .seconds(2)
+
     var notchStatus: NotchStatus = .closed
     var notchOpenReason: NotchOpenReason?
     var islandSurface: IslandSurface = .sessionList()
@@ -54,6 +57,9 @@ final class OverlayUICoordinator {
     var onStatusMessage: ((String) -> Void)?
 
     @ObservationIgnored
+    var onCodexUsageAlertVisiblyPresented: ((CodexUsagePaceAlert) -> Void)?
+
+    @ObservationIgnored
     var activeIslandCardSessionAccessor: (() -> AgentSession?)?
 
     @ObservationIgnored
@@ -79,6 +85,9 @@ final class OverlayUICoordinator {
 
     @ObservationIgnored
     private var notificationAutoCollapseTask: Task<Void, Never>?
+
+    @ObservationIgnored
+    private var notificationPresentationConfirmationTask: Task<Void, Never>?
 
     @ObservationIgnored
     private var pointerExitAutoHideTask: Task<Void, Never>?
@@ -167,6 +176,7 @@ final class OverlayUICoordinator {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         notificationAutoCollapseTask?.cancel()
+        notificationPresentationConfirmationTask?.cancel()
         pointerExitAutoHideTask?.cancel()
     }
 
@@ -212,6 +222,7 @@ final class OverlayUICoordinator {
                 self?.cancelPointerExitAutoHide()
                 self?.notificationAutoCollapseTask?.cancel()
                 self?.notificationAutoCollapseTask = nil
+                self?.cancelNotificationPresentationConfirmation()
             },
             afterStateChange: { [weak self] in
                 guard let self else { return }
@@ -446,9 +457,13 @@ final class OverlayUICoordinator {
             return false
         }
 
+        cancelNotificationPresentationConfirmation()
         appModel?.measuredNotificationContentHeight = 0
         NotificationSoundService.playNotification(isMuted: isSoundMuted)
         notchOpen(reason: .notification, surface: surface)
+        if let alert = surface.codexUsageAlert {
+            scheduleNotificationPresentationConfirmation(for: alert)
+        }
         return true
     }
 
@@ -548,6 +563,37 @@ final class OverlayUICoordinator {
         }
     }
 
+    private func scheduleNotificationPresentationConfirmation(
+        for alert: CodexUsagePaceAlert
+    ) {
+        let expectedSurface = IslandSurface.codexUsageAlert(alert)
+        notificationPresentationConfirmationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: self.notificationPresentationConfirmationDelay)
+            } catch {
+                return
+            }
+
+            self.notificationPresentationConfirmationTask = nil
+            guard self.notchStatus == .opened,
+                  self.notchOpenReason == .notification,
+                  self.islandSurface == expectedSurface,
+                  self.overlayPanelController.isVisuallyVisible,
+                  self.overlayPanelController.isOrdered,
+                  self.overlayPanelController.alphaValue > 0 else {
+                return
+            }
+
+            self.onCodexUsageAlertVisiblyPresented?(alert)
+        }
+    }
+
+    private func cancelNotificationPresentationConfirmation() {
+        notificationPresentationConfirmationTask?.cancel()
+        notificationPresentationConfirmationTask = nil
+    }
+
     private func schedulePointerExitAutoHide() {
         guard pointerExitAutoHideTask == nil else {
             return
@@ -618,6 +664,7 @@ final class OverlayUICoordinator {
 
     func applyOverlayState(from snapshot: IslandDebugSnapshot, presentOverlay: Bool, autoCollapseNotificationCards: Bool) {
         cancelPointerExitAutoHide()
+        cancelNotificationPresentationConfirmation()
         notificationAutoCollapseTask?.cancel()
         notificationAutoCollapseTask = nil
         autoCollapseSurfaceHasBeenEntered = false

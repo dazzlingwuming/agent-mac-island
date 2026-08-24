@@ -672,6 +672,11 @@ final class AppModel {
         overlay.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
         }
+        overlay.onCodexUsageAlertVisiblyPresented = { [weak self] alert in
+            guard let self else { return }
+            self.codexUsagePaceCoordinator.recordPresentation(of: alert)
+            self.lastActionMessage = "Codex usage pace alert visibly presented: \(alert.risk.rawValue)."
+        }
         overlay.activeIslandCardSessionAccessor = { [weak self] in
             self?.activeIslandCardSession
         }
@@ -1313,10 +1318,7 @@ final class AppModel {
             return
         }
 
-        if presentNotificationSurface(.codexUsageAlert(alert)) {
-            codexUsagePaceCoordinator.recordPresentation(of: alert)
-            lastActionMessage = "Codex usage pace alert presented: \(alert.risk.rawValue)."
-        }
+        _ = presentNotificationSurface(.codexUsageAlert(alert))
     }
 
     func loadDebugSnapshot(
