@@ -202,6 +202,15 @@
 "island.showAll" = "顯示全部 %lld 個工作階段";
 "island.collapseList" = "收起清單";
 "island.usageWaiting" = "等待用量資料";
+"island.session.dismiss" = "關閉工作階段";
+"island.idleCleanup.button" = "清理閒置記錄（%lld）";
+"island.idleCleanup.rowAction" = "移除這筆閒置記錄";
+"island.idleCleanup.confirmTitle" = "清理 %lld 筆本機閒置記錄？";
+"island.idleCleanup.confirmAction" = "清理記錄";
+"island.idleCleanup.confirmMessage" = "只會從 Open Island 中移除這些記錄，不會刪除原始 Agent 工作階段或終止任何程序。工作階段有新活動時會自動重新顯示。";
+"island.idleCleanup.clearedOne" = "已清理 1 筆本機閒置記錄。";
+"island.idleCleanup.clearedCount" = "已清理 %lld 筆本機閒置記錄。";
+"island.idleCleanup.persistFailed" = "無法儲存閒置記錄清理狀態：%@";
 
 /* Codex 用量速度提醒 */
 "usageAlert.attentionTitle" = "Codex 用量需要注意";

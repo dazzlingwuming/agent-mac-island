@@ -202,6 +202,15 @@
 "island.showAll" = "Show all %lld sessions";
 "island.collapseList" = "Collapse list";
 "island.usageWaiting" = "Usage waiting";
+"island.session.dismiss" = "Dismiss session";
+"island.idleCleanup.button" = "Clear idle records (%lld)";
+"island.idleCleanup.rowAction" = "Remove this idle record";
+"island.idleCleanup.confirmTitle" = "Clear %lld local idle records?";
+"island.idleCleanup.confirmAction" = "Clear Records";
+"island.idleCleanup.confirmMessage" = "This only removes the records from Open Island. It does not delete the original agent sessions or stop any processes. A session will reappear automatically when it has new activity.";
+"island.idleCleanup.clearedOne" = "Cleared 1 local idle record.";
+"island.idleCleanup.clearedCount" = "Cleared %lld local idle records.";
+"island.idleCleanup.persistFailed" = "Could not save idle record cleanup: %@";
 
 /* Codex Usage Pace Alerts */
 "usageAlert.attentionTitle" = "Codex usage deserves attention";

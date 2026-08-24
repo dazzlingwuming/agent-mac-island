@@ -202,6 +202,15 @@
 "island.showAll" = "显示全部 %lld 个会话";
 "island.collapseList" = "收起列表";
 "island.usageWaiting" = "等待用量数据";
+"island.session.dismiss" = "关闭会话";
+"island.idleCleanup.button" = "清理空闲记录（%lld）";
+"island.idleCleanup.rowAction" = "移除这条空闲记录";
+"island.idleCleanup.confirmTitle" = "清理 %lld 条本地空闲记录？";
+"island.idleCleanup.confirmAction" = "清理记录";
+"island.idleCleanup.confirmMessage" = "只会从 Open Island 中移除这些记录，不会删除原始 Agent 会话或终止任何进程。会话有新活动时会自动重新显示。";
+"island.idleCleanup.clearedOne" = "已清理 1 条本地空闲记录。";
+"island.idleCleanup.clearedCount" = "已清理 %lld 条本地空闲记录。";
+"island.idleCleanup.persistFailed" = "无法保存空闲记录清理状态：%@";
 
 /* Codex 用量速度提醒 */
 "usageAlert.attentionTitle" = "Codex 用量需要注意";
