@@ -352,6 +352,34 @@ struct CodexRolloutDiscoveryDiagnostics: Equatable, Sendable {
     var cacheHitCount = 0
 }
 
+/// Incrementally extracts complete JSONL records. `scanCursor` is retained
+/// across chunk appends so each byte is examined at most once before the
+/// consumed prefix is removed in one operation.
+private func extractCodexCompleteLines(
+    from buffer: inout Data,
+    scanCursor: inout Int
+) -> [String] {
+    let newline = UInt8(ascii: "\n")
+    var lines: [String] = []
+    var lineStart = 0
+
+    while scanCursor < buffer.count {
+        if buffer[scanCursor] == newline {
+            if lineStart < scanCursor {
+                lines.append(String(decoding: buffer[lineStart..<scanCursor], as: UTF8.self))
+            }
+            lineStart = scanCursor + 1
+        }
+        scanCursor += 1
+    }
+
+    if lineStart > 0 {
+        buffer.removeSubrange(0..<lineStart)
+        scanCursor -= lineStart
+    }
+    return lines
+}
+
 public final class CodexRolloutDiscovery: @unchecked Sendable {
     private struct Candidate {
         var fileURL: URL
@@ -400,6 +428,8 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     private let fileManager: FileManager
     private let maxAge: TimeInterval
     private let maxFiles: Int
+    private let initialHeadReadLimit: Int
+    private let initialTailReadLimit: Int
 
     private let stateLock = NSLock()
     private var parseStates: [String: ParseState] = [:]
@@ -414,12 +444,16 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         rootURL: URL = CodexRolloutDiscovery.defaultRootURL,
         fileManager: FileManager = .default,
         maxAge: TimeInterval = 86_400,
-        maxFiles: Int = 40
+        maxFiles: Int = 40,
+        initialHeadReadLimit: Int = 256 * 1_024,
+        initialTailReadLimit: Int = 2 * 1_024 * 1_024
     ) {
         self.rootURL = rootURL
         self.fileManager = fileManager
         self.maxAge = maxAge
         self.maxFiles = maxFiles
+        self.initialHeadReadLimit = max(0, initialHeadReadLimit)
+        self.initialTailReadLimit = max(0, initialTailReadLimit)
     }
 
     public func discoverRecentSessions(now: Date = .now) -> [CodexTrackedSessionRecord] {
@@ -561,6 +595,35 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         defer { try? fileHandle.close() }
         diagnostics.parsedFileCount += 1
 
+        if state == nil,
+           fileSize > initialHeadReadLimit + initialTailReadLimit,
+           initialHeadReadLimit > 0,
+           initialTailReadLimit > 0,
+           let bootstrap = bootstrapLargeRollout(
+               fileHandle: fileHandle,
+               fileSize: fileSize,
+               diagnostics: &diagnostics
+           ) {
+            let record = makeRecord(
+                fileURL: fileURL,
+                modifiedAt: modifiedAt,
+                snapshot: bootstrap.recordSnapshot,
+                sessionMeta: bootstrap.sessionMeta
+            )
+
+            stateLock.withLock {
+                parseStates[path] = ParseState(
+                    consumedOffset: bootstrap.consumedOffset,
+                    snapshot: bootstrap.snapshot,
+                    sessionMeta: bootstrap.sessionMeta,
+                    fileSize: fileSize,
+                    modifiedAt: modifiedAt,
+                    record: record
+                )
+            }
+            return record
+        }
+
         var snapshot = state?.snapshot ?? CodexRolloutSnapshot()
         var sessionMeta = state?.sessionMeta
         var startOffset = state?.consumedOffset ?? 0
@@ -576,6 +639,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         }
 
         var buffer = Data()
+        var scanCursor = 0
         var bytesRead = 0
 
         while let chunk = try? fileHandle.read(upToCount: Self.streamingChunkSize),
@@ -583,7 +647,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
             buffer.append(chunk)
             bytesRead += chunk.count
             diagnostics.bytesRead += chunk.count
-            for line in extractCompleteLines(from: &buffer) {
+            for line in extractCompleteLines(from: &buffer, scanCursor: &scanCursor) {
                 CodexRolloutReducer.apply(line: line, to: &snapshot)
                 if sessionMeta == nil {
                     sessionMeta = parseSessionMeta(fromLine: line)
@@ -665,6 +729,93 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
 
     private static let streamingChunkSize = 64 * 1_024
 
+    private struct LargeRolloutBootstrap {
+        var snapshot: CodexRolloutSnapshot
+        var recordSnapshot: CodexRolloutSnapshot
+        var sessionMeta: SessionMeta?
+        var consumedOffset: Int
+    }
+
+    /// A rollout can grow into the gigabytes. On the first scan, reconstruct
+    /// the stable session identity from a bounded head read and the current
+    /// state from a bounded tail read. Later scans continue incrementally from
+    /// the last complete tail record, so historical tool output never has to
+    /// be folded again merely to show the current Island state.
+    private func bootstrapLargeRollout(
+        fileHandle: FileHandle,
+        fileSize: Int,
+        diagnostics: inout CodexRolloutDiscoveryDiagnostics
+    ) -> LargeRolloutBootstrap? {
+        do {
+            try fileHandle.seek(toOffset: 0)
+            let head = try fileHandle.read(upToCount: min(fileSize, initialHeadReadLimit)) ?? Data()
+            diagnostics.bytesRead += head.count
+
+            var snapshot = CodexRolloutSnapshot()
+            var sessionMeta: SessionMeta?
+            var headBuffer = head
+            var headCursor = 0
+            for line in extractCodexCompleteLines(from: &headBuffer, scanCursor: &headCursor) {
+                CodexRolloutReducer.apply(line: line, to: &snapshot)
+                if sessionMeta == nil {
+                    sessionMeta = parseSessionMeta(fromLine: line)
+                }
+            }
+
+            let desiredTailStart = max(head.count, fileSize - initialTailReadLimit)
+            let tailReadStart = max(head.count, desiredTailStart - 1)
+            try fileHandle.seek(toOffset: UInt64(tailReadStart))
+            var tailBuffer = try fileHandle.readToEnd() ?? Data()
+            diagnostics.bytesRead += tailBuffer.count
+
+            var tailOrigin = tailReadStart
+            var tailStartsAtLineBoundary = tailReadStart == 0
+            if tailReadStart > 0, !tailBuffer.isEmpty {
+                let newline = UInt8(ascii: "\n")
+                if tailBuffer[tailBuffer.startIndex] == newline {
+                    tailBuffer = Data(tailBuffer.dropFirst())
+                    tailOrigin += 1
+                    tailStartsAtLineBoundary = true
+                } else if let newlineIndex = tailBuffer.firstIndex(of: newline) {
+                    let removedCount = tailBuffer.distance(
+                        from: tailBuffer.startIndex,
+                        to: newlineIndex
+                    ) + 1
+                    tailBuffer = Data(tailBuffer.dropFirst(removedCount))
+                    tailOrigin += removedCount
+                    tailStartsAtLineBoundary = true
+                }
+            }
+
+            let alignedTailByteCount = tailBuffer.count
+            var tailCursor = 0
+            for line in extractCodexCompleteLines(from: &tailBuffer, scanCursor: &tailCursor) {
+                CodexRolloutReducer.apply(line: line, to: &snapshot)
+                if sessionMeta == nil {
+                    sessionMeta = parseSessionMeta(fromLine: line)
+                }
+            }
+
+            let consumedOffset = tailOrigin + alignedTailByteCount - tailBuffer.count
+            var recordSnapshot = snapshot
+            if tailStartsAtLineBoundary, !tailBuffer.isEmpty {
+                CodexRolloutReducer.apply(
+                    line: String(decoding: tailBuffer, as: UTF8.self),
+                    to: &recordSnapshot
+                )
+            }
+
+            return LargeRolloutBootstrap(
+                snapshot: snapshot,
+                recordSnapshot: recordSnapshot,
+                sessionMeta: sessionMeta,
+                consumedOffset: consumedOffset
+            )
+        } catch {
+            return nil
+        }
+    }
+
     private func parseSessionMeta(fromLine line: String) -> SessionMeta? {
         guard let object = codexRolloutJSONObject(for: line),
               object["type"] as? String == "session_meta" else {
@@ -688,16 +839,11 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
         )
     }
 
-    private func extractCompleteLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-            guard !lineData.isEmpty else { continue }
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-        return lines
+    private func extractCompleteLines(
+        from buffer: inout Data,
+        scanCursor: inout Int
+    ) -> [String] {
+        extractCodexCompleteLines(from: &buffer, scanCursor: &scanCursor)
     }
 }
 
@@ -1699,6 +1845,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var target: CodexRolloutWatchTarget
         var offset: UInt64 = 0
         var pendingBuffer = Data()
+        var pendingScanCursor = 0
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
     }
@@ -1807,6 +1954,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         if fileSize < observation.offset {
             observation.offset = 0
             observation.pendingBuffer.removeAll(keepingCapacity: false)
+            observation.pendingScanCursor = 0
             observation.snapshot = CodexRolloutSnapshot()
         }
 
@@ -1822,10 +1970,14 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
             if observation.shouldTrimLeadingPartialLine {
                 trimLeadingPartialLine(from: &observation.pendingBuffer)
+                observation.pendingScanCursor = 0
                 observation.shouldTrimLeadingPartialLine = false
             }
 
-            let lines = completeLines(from: &observation.pendingBuffer)
+            let lines = completeLines(
+                from: &observation.pendingBuffer,
+                scanCursor: &observation.pendingScanCursor
+            )
             guard !lines.isEmpty else {
                 return []
             }
@@ -1844,22 +1996,8 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         }
     }
 
-    private func completeLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-
-            guard !lineData.isEmpty else {
-                continue
-            }
-
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-
-        return lines
+    private func completeLines(from buffer: inout Data, scanCursor: inout Int) -> [String] {
+        extractCodexCompleteLines(from: &buffer, scanCursor: &scanCursor)
     }
 
     private func makeObservation(for target: CodexRolloutWatchTarget) -> Observation {
@@ -1923,6 +2061,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         do {
             try fileHandle.seek(toOffset: 0)
             var buffer = Data()
+            var scanCursor = 0
             var snapshot = CodexRolloutSnapshot()
             var bytesRemaining = readLimit
 
@@ -1935,7 +2074,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 buffer.append(data)
                 bytesRemaining -= UInt64(data.count)
 
-                let lines = completeLines(from: &buffer)
+                let lines = completeLines(from: &buffer, scanCursor: &scanCursor)
                 guard !lines.isEmpty else {
                     continue
                 }
@@ -1958,6 +2097,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             let startOffset = fileSize > readLimit ? fileSize - readLimit : 0
             try fileHandle.seek(toOffset: startOffset)
             var buffer = try fileHandle.readToEnd() ?? Data()
+            var scanCursor = 0
             guard !buffer.isEmpty else {
                 return nil
             }
@@ -1966,7 +2106,9 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
                 trimLeadingPartialLine(from: &buffer)
             }
 
-            let tailSnapshot = CodexRolloutReducer.snapshot(for: completeLines(from: &buffer))
+            let tailSnapshot = CodexRolloutReducer.snapshot(
+                for: completeLines(from: &buffer, scanCursor: &scanCursor)
+            )
             return tailSnapshot.lastUserPrompt
         } catch {
             return nil

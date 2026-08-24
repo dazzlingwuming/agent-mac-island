@@ -55,7 +55,10 @@ final class SessionDiscoveryCoordinator {
     let codexRolloutWatcher = CodexRolloutWatcher()
 
     @ObservationIgnored
-    private let codexRolloutDiscovery = CodexRolloutDiscovery()
+    private let codexRolloutDiscovery: CodexRolloutDiscovery
+
+    @ObservationIgnored
+    private var codexAppRediscoveryTask: Task<Void, Never>?
 
     @ObservationIgnored
     private let claudeTranscriptDiscovery = ClaudeTranscriptDiscovery()
@@ -71,6 +74,23 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     private var cursorSessionPersistenceTask: Task<Void, Never>?
+
+    init(
+        codexRolloutDiscovery: CodexRolloutDiscovery = CodexRolloutDiscovery(),
+        codexRediscoveryOperation: (@Sendable () -> [CodexTrackedSessionRecord])? = nil
+    ) {
+        self.codexRolloutDiscovery = codexRolloutDiscovery
+        self.codexRediscoveryOperation = codexRediscoveryOperation ?? {
+            codexRolloutDiscovery.discoverRecentSessions()
+        }
+    }
+
+    @ObservationIgnored
+    private let codexRediscoveryOperation: @Sendable () -> [CodexTrackedSessionRecord]
+
+    deinit {
+        codexAppRediscoveryTask?.cancel()
+    }
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -416,18 +436,25 @@ final class SessionDiscoveryCoordinator {
     /// Called periodically when Codex.app is running as a fallback when
     /// the app-server connection is unavailable.  Throttled to at most
     /// once per 10 seconds.
-    func rediscoverCodexAppSessionsIfNeeded() {
-        let now = Date.now
-        guard now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else { return }
-        lastCodexAppRescanDate = now
+    func rediscoverCodexAppSessionsIfNeeded(now: Date = .now) {
+        guard codexAppRediscoveryTask == nil,
+              now.timeIntervalSince(lastCodexAppRescanDate) >= 10 else {
+            return
+        }
 
-        let discovery = codexRolloutDiscovery
-        Task.detached(priority: .utility) { [weak self] in
-            let discovered = discovery.discoverRecentSessions()
-            guard !discovered.isEmpty else { return }
-            await MainActor.run { [weak self] in
-                self?.applyCodexAppRediscovery(discovered)
-            }
+        let operation = codexRediscoveryOperation
+        codexAppRediscoveryTask = Task { @MainActor [weak self] in
+            let discovered = await Task.detached(priority: .utility, operation: operation).value
+            guard let self else { return }
+
+            // Clear first so empty results and cancellation never wedge the
+            // periodic maintenance loop. The cooldown begins on completion,
+            // not on the slow scan's start time.
+            self.codexAppRediscoveryTask = nil
+            self.lastCodexAppRescanDate = Date.now
+
+            guard !Task.isCancelled, !discovered.isEmpty else { return }
+            self.applyCodexAppRediscovery(discovered)
         }
     }
 
