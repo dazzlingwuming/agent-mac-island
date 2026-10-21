@@ -50,8 +50,25 @@ def read(work):
 def write(work, data):
     file = manifest(work)
     temp = work / ".manifest.tmp"
+    if temp.is_symlink():
+        raise ValueError(f"refusing symlink manifest temp: {temp}")
     temp.write_text(json.dumps(data, indent=2) + "\n")
     temp.replace(file)
+def retained_by_live_or_unknown(data):
+    if data.get("dependencies") != []:
+        return True
+    pid = data.get("pid")
+    if pid is None:
+        return False
+    if type(pid) is not int or pid <= 0:
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
 def create(task, retention=24):
     if retention < 0:
         raise ValueError("failure retention cannot be negative")
@@ -61,7 +78,8 @@ def create(task, retention=24):
     work.mkdir()
     data = {"task_id": task, "status": "created", "pid": None,
             "created_at": now(), "updated_at": now(),
-            "failure_retention_hours": retention, "delivered_at": None}
+            "failure_retention_hours": retention, "delivered_at": None,
+            "dependencies": []}
     (work / "manifest.json").write_text(json.dumps(data, indent=2) + "\n")
     return work
 def run_task(task, argv, retention=24):
@@ -113,6 +131,8 @@ def complete(task, verify, artifacts, delivery_root=None):
     data = read(work)
     if data.get("status") != "succeeded":
         raise ValueError("complete requires a succeeded task")
+    if retained_by_live_or_unknown(data):
+        raise ValueError("complete refuses a live process or unknown/non-empty dependencies")
     if not verify or not artifacts:
         raise ValueError("complete requires --verify-json and at least one --artifact")
     command = json.loads(verify)
@@ -176,7 +196,9 @@ def cleanup(task=None):
         try:
             data = read(work)
             status = data.get("status")
-            if status == "delivered":
+            if retained_by_live_or_unknown(data):
+                print(f"preserved live process or unknown/non-empty dependencies: {work}")
+            elif status == "delivered":
                 shutil.rmtree(work)
             elif status == "failed":
                 deadline = datetime.fromisoformat(data["updated_at"]) + timedelta(hours=float(data["failure_retention_hours"]))
