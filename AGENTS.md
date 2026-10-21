@@ -94,6 +94,7 @@ See [docs/worktree-workflow.md](/Users/wangruobing/Personal/open-island/docs/wor
 ## Registered Task Workspaces
 
 - Put task-specific scratch output under `output/task-workspaces/<taskid>` using `python3 scripts/task-workspace.py run --task <taskid> -- <command ...>`; the process receives its path as `OPEN_ISLAND_TASK_WORKSPACE`.
+- Resume an explicitly registered `created` task only with `python3 scripts/task-workspace.py run --task <taskid> --resume-created -- <command ...>`. The command rejects every other state and any live/unknown PID or dependency.
 - Deliver only verified artifacts with `python3 scripts/task-workspace.py complete --task <taskid> --verify-json '["python3","scripts/validate-harness-artifacts.py","<workspace>/smoke/report.json"]' --artifact smoke`. Delivery is saved under `output/task-deliveries/<taskid>` before the temporary workspace is removed.
 - `cleanup [--task <taskid>]` removes only registered delivered workspaces or failed workspaces past their manifest retention period. Running, created, unknown, and unsafe entries are preserved. Never place recovery backups or other durable assets in a task workspace.
 

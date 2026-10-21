@@ -82,9 +82,17 @@ def create(task, retention=24):
             "dependencies": []}
     (work / "manifest.json").write_text(json.dumps(data, indent=2) + "\n")
     return work
-def run_task(task, argv, retention=24):
-    work = create(task, retention)
-    data = read(work)
+def run_task(task, argv, retention=24, resume_created=False):
+    if resume_created:
+        work, _ = paths(task)
+        data = read(work)
+        if data.get("status") != "created":
+            raise ValueError("--resume-created requires a registered created task")
+        if retained_by_live_or_unknown(data):
+            raise ValueError("--resume-created refuses a live/unknown PID or dependencies")
+    else:
+        work = create(task, retention)
+        data = read(work)
     env = os.environ.copy()
     env["OPEN_ISLAND_TASK_WORKSPACE"] = str(work)
     try:
@@ -214,7 +222,7 @@ def main():
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="action", required=True)
     p = sub.add_parser("create"); p.add_argument("--task", required=True); p.add_argument("--failure-retention-hours", type=float, default=24)
-    p = sub.add_parser("run"); p.add_argument("--task", required=True); p.add_argument("--failure-retention-hours", type=float, default=24); p.add_argument("argv", nargs=argparse.REMAINDER)
+    p = sub.add_parser("run"); p.add_argument("--task", required=True); p.add_argument("--failure-retention-hours", type=float, default=24); p.add_argument("--resume-created", action="store_true"); p.add_argument("argv", nargs=argparse.REMAINDER)
     p = sub.add_parser("complete"); p.add_argument("--task", required=True); p.add_argument("--verify-json", required=True); p.add_argument("--artifact", action="append", required=True); p.add_argument("--delivery-dir")
     p = sub.add_parser("cleanup"); p.add_argument("--task")
     args = parser.parse_args()
@@ -223,7 +231,7 @@ def main():
         elif args.action == "run":
             argv = args.argv[1:] if args.argv[:1] == ["--"] else args.argv
             if not argv: raise ValueError("run requires -- followed by a command")
-            return run_task(args.task, argv, args.failure_retention_hours)
+            return run_task(args.task, argv, args.failure_retention_hours, args.resume_created)
         elif args.action == "complete": complete(args.task, args.verify_json, args.artifact, args.delivery_dir)
         else: cleanup(args.task)
     except (ValueError, OSError, json.JSONDecodeError) as exc:
