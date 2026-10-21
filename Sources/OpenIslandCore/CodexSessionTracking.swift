@@ -983,6 +983,16 @@ public enum CodexRolloutReducer {
         let newSummary = newSnapshot.summary ?? oldSummary ?? "Codex updated the current turn."
 
         if newSnapshot.isCompleted {
+            // Clear an asynchronous prompt before reporting an explicit terminal
+            // condition, so consumers can distinguish it from an ordinary Stop
+            // emitted while the unanswered question is still pending.
+            if oldQuestionPrompt?.isAsynchronous == true, newQuestionPrompt == nil {
+                events.append(.actionableStateResolved(ActionableStateResolved(
+                    sessionID: sessionID,
+                    summary: newSummary,
+                    timestamp: timestamp
+                )))
+            }
             if !oldCompleted || oldSummary != newSummary || oldInterrupted != newSnapshot.isInterrupted {
                 events.append(
                     .sessionCompleted(
@@ -1060,6 +1070,15 @@ public enum CodexRolloutReducer {
             applyAssistantMessage(message, timestamp: timestamp, to: &snapshot)
             return
         case "task_complete", "turn_complete":
+            // The model can finish its turn while the asynchronous UI still
+            // awaits a reply. Only a user/turn boundary or explicit termination
+            // resolves that outstanding question.
+            if snapshot.questionPrompt?.isAsynchronous == true {
+                if let message = payload["last_agent_message"] as? String, !message.isEmpty {
+                    snapshot.lastAssistantMessage = message
+                }
+                break
+            }
             snapshot.currentTool = nil
             snapshot.currentCommandPreview = nil
             clearPendingQuestion(on: &snapshot)
@@ -1217,6 +1236,7 @@ public enum CodexRolloutReducer {
     }
 
     private static func markRateLimitReached(on snapshot: inout CodexRolloutSnapshot) {
+        clearPendingQuestion(on: &snapshot)
         snapshot.currentTool = nil
         snapshot.currentCommandPreview = nil
         snapshot.phase = .completed
@@ -1274,9 +1294,10 @@ public enum CodexRolloutReducer {
                 return
             }
 
-            if toolName == "request_user_input" || toolName == "elicitation_request",
+            let isAsynchronous = toolName == "request_user_input_async"
+            if toolName == "request_user_input" || toolName == "elicitation_request" || isAsynchronous,
                let callID = clipped(payload["call_id"] as? String),
-               let prompt = questionPrompt(from: payload) {
+               let prompt = questionPrompt(from: payload, isAsynchronous: isAsynchronous) {
                 applyQuestionFunctionCall(
                     callID: callID,
                     prompt: prompt,
@@ -1411,7 +1432,10 @@ public enum CodexRolloutReducer {
         _ payload: [String: Any],
         in snapshot: inout CodexRolloutSnapshot
     ) -> Bool {
-        guard let callID = clipped(payload["call_id"] as? String),
+        // Async function output acknowledges displaying the question; the
+        // user's eventual reply arrives separately as a user/turn boundary.
+        guard snapshot.questionPrompt?.isAsynchronous != true,
+              let callID = clipped(payload["call_id"] as? String),
               callID == snapshot.pendingQuestionCallID else {
             return false
         }
@@ -1459,8 +1483,8 @@ public enum CodexRolloutReducer {
         snapshot.lastAssistantMessage = message
 
         // A rollout may flush explanatory assistant text around an outstanding
-        // request_user_input call. Keep the actionable prompt authoritative
-        // until its matching function_call_output arrives.
+        // question call. Keep the actionable prompt authoritative until the
+        // corresponding synchronous answer or an explicit lifecycle boundary.
         if snapshot.pendingQuestionCallID != nil {
             if let timestamp {
                 snapshot.updatedAt = timestamp
@@ -1536,7 +1560,7 @@ public enum CodexRolloutReducer {
             "image"
         case "update_plan":
             "plan"
-        case "request_user_input":
+        case "request_user_input", "request_user_input_async":
             "question"
         default:
             readableToolName(toolName)
@@ -1574,30 +1598,43 @@ public enum CodexRolloutReducer {
         return object
     }
 
-    private static func questionPrompt(from payload: [String: Any]) -> QuestionPrompt? {
+    private static func questionPrompt(
+        from payload: [String: Any],
+        isAsynchronous: Bool
+    ) -> QuestionPrompt? {
         guard let arguments = decodedArguments(from: payload),
               let rawQuestions = arguments["questions"] as? [[String: Any]] else {
             return nil
         }
 
         let questions = rawQuestions.compactMap { rawQuestion -> QuestionPromptItem? in
-            guard let question = clipped(rawQuestion["question"] as? String, limit: 500),
-                  let rawOptions = rawQuestion["options"] as? [[String: Any]] else {
+            guard let question = clipped(rawQuestion["question"] as? String, limit: 500)
+                ?? (isAsynchronous ? clipped(rawQuestion["title"] as? String, limit: 500) : nil) else {
                 return nil
             }
 
-            let options = rawOptions.compactMap { rawOption -> QuestionOption? in
-                guard let label = clipped(rawOption["label"] as? String, limit: 160) else {
-                    return nil
+            let options: [QuestionOption]
+            if let rawOptions = rawQuestion["options"] as? [[String: Any]] {
+                options = rawOptions.compactMap { rawOption -> QuestionOption? in
+                    guard let label = clipped(rawOption["label"] as? String, limit: 160) else {
+                        return nil
+                    }
+                    return QuestionOption(
+                        label: label,
+                        description: clipped(rawOption["description"] as? String, limit: 280) ?? ""
+                    )
                 }
-
-                return QuestionOption(
-                    label: label,
-                    description: clipped(rawOption["description"] as? String, limit: 280) ?? ""
-                )
+            } else if isAsynchronous, let rawOptions = rawQuestion["options"] as? [String] {
+                options = rawOptions.compactMap { rawOption in
+                    clipped(rawOption, limit: 160).map { QuestionOption(label: $0) }
+                }
+            } else if isAsynchronous, rawQuestion["options"] == nil {
+                options = []
+            } else {
+                return nil
             }
 
-            guard !options.isEmpty else {
+            guard isAsynchronous || !options.isEmpty else {
                 return nil
             }
 
@@ -1621,7 +1658,8 @@ public enum CodexRolloutReducer {
         return QuestionPrompt(
             title: title,
             questions: questions,
-            responseChannel: .sourceApplication
+            responseChannel: .sourceApplication,
+            isAsynchronous: isAsynchronous
         )
     }
 

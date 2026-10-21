@@ -327,6 +327,186 @@ struct CodexSessionTrackingTests {
     }
 
     @Test
+    func codexRolloutReducerKeepsAsyncQuestionPendingAcrossAcknowledgementAndBackgroundWork() throws {
+        let initial = CodexRolloutSnapshot()
+        var snapshot = CodexRolloutReducer.snapshot(for: [asyncQuestionLine()])
+        let prompt = try #require(snapshot.questionPrompt)
+        #expect(snapshot.phase == .waitingForAnswer)
+        #expect(snapshot.pendingQuestionCallID == "call-async-question")
+        #expect(prompt.title == "Which example should be inspected?")
+        #expect(prompt.questions.first?.options.map(\.label) == ["Example A", "Example B"])
+        #expect(prompt.responseChannel == .sourceApplication)
+        #expect(!prompt.supportsInlineResponse)
+        #expect(prompt.isAsynchronous)
+        let questionEvents = CodexRolloutReducer.events(
+            from: initial, to: snapshot, sessionID: "async-session", transcriptPath: "/tmp/example.jsonl"
+        )
+        #expect(questionEvents.compactMap(\.trackedQuestionAsked).count == 1)
+
+        let backgroundPayloads: [[String: Any]] = [
+            ["type": "function_call_output", "call_id": "call-async-question", "output": "Question displayed"],
+            ["type": "function_call", "name": "exec_command", "call_id": "background", "arguments": "{}"],
+            ["type": "function_call_output", "call_id": "background", "output": "done"],
+            ["type": "reasoning"],
+            ["type": "message", "role": "assistant", "content": [["type": "output_text", "text": "I am checking the examples."]]],
+        ]
+        for payload in backgroundPayloads {
+            let previous = snapshot
+            CodexRolloutReducer.apply(
+                line: rolloutLine(timestamp: "2026-10-21T01:00:01.000Z", type: "response_item", payload: payload),
+                to: &snapshot
+            )
+            #expect(snapshot.phase == .waitingForAnswer)
+            #expect(snapshot.pendingQuestionCallID == "call-async-question")
+            #expect(snapshot.questionPrompt == prompt)
+            let events = CodexRolloutReducer.events(
+                from: previous, to: snapshot, sessionID: "async-session", transcriptPath: "/tmp/example.jsonl"
+            )
+            #expect(events.compactMap(\.trackedQuestionAsked).isEmpty)
+            #expect(events.compactMap(\.trackedActionableResolution).isEmpty)
+        }
+
+        for completion in ["task_complete", "turn_complete"] {
+            let previous = snapshot
+            CodexRolloutReducer.apply(
+                line: rolloutLine(
+                    timestamp: "2026-10-21T01:00:02.000Z", type: "event_msg",
+                    payload: ["type": completion, "last_agent_message": "I will wait for your reply."]
+                ),
+                to: &snapshot
+            )
+            #expect(snapshot.phase == .waitingForAnswer)
+            #expect(!snapshot.isCompleted)
+            #expect(snapshot.questionPrompt == prompt)
+            let events = CodexRolloutReducer.events(
+                from: previous, to: snapshot, sessionID: "async-session", transcriptPath: "/tmp/example.jsonl"
+            )
+            #expect(events.compactMap(\.trackedSessionCompletion).isEmpty)
+            #expect(events.compactMap(\.trackedActionableResolution).isEmpty)
+        }
+    }
+
+    @Test(arguments: ["user_message", "turn_started", "task_started", "turn_aborted"])
+    func codexRolloutReducerClearsAsyncQuestionAtUserOrTurnBoundary(eventType: String) throws {
+        let waiting = CodexRolloutReducer.snapshot(for: [asyncQuestionLine()])
+        #expect(waiting.questionPrompt != nil)
+        var resolved = waiting
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-10-21T01:00:02.000Z", type: "event_msg",
+                payload: ["type": eventType, "message": "Example A"]
+            ),
+            to: &resolved
+        )
+        #expect(resolved.questionPrompt == nil)
+        #expect(resolved.pendingQuestionCallID == nil)
+        #expect(resolved.phase != .waitingForAnswer)
+        let events = CodexRolloutReducer.events(
+            from: waiting, to: resolved, sessionID: "async-session", transcriptPath: "/tmp/example.jsonl"
+        )
+        if resolved.isCompleted {
+            #expect(events.compactMap(\.trackedSessionCompletion).count == 1)
+        } else {
+            #expect(events.compactMap(\.trackedActionableResolution).count == 1)
+        }
+    }
+
+    @Test
+    func codexRolloutReducerResolvesAsyncQuestionOnResponseItemUserReply() {
+        var snapshot = CodexRolloutReducer.snapshot(for: [asyncQuestionLine()])
+        #expect(snapshot.questionPrompt != nil)
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-10-21T01:00:02.000Z", type: "response_item",
+                payload: ["type": "message", "role": "user", "content": [["type": "input_text", "text": "Example A"]]]
+            ),
+            to: &snapshot
+        )
+        #expect(snapshot.phase == .running)
+        #expect(snapshot.questionPrompt == nil)
+        #expect(snapshot.lastUserPrompt == "Example A")
+
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-10-21T01:00:03.000Z", type: "response_item",
+                payload: ["type": "function_call", "name": "request_user_input", "call_id": "legacy-followup", "arguments": requestUserInputArguments()]
+            ),
+            to: &snapshot
+        )
+        #expect(snapshot.phase == .waitingForAnswer)
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-10-21T01:00:04.000Z", type: "response_item",
+                payload: ["type": "function_call_output", "call_id": "legacy-followup", "output": #"{"answers":{}}"#]
+            ),
+            to: &snapshot
+        )
+        #expect(snapshot.phase == .running)
+        #expect(snapshot.questionPrompt == nil)
+    }
+
+    @Test
+    func codexRolloutReducerSupportsAsyncFreeformAndLegacyQuestionArguments() throws {
+        let freeform = CodexRolloutReducer.snapshot(for: [
+            asyncQuestionLine(arguments: #"{"questions":[{"title":"What example should be used?"}]}"#),
+        ])
+        #expect(freeform.phase == .waitingForAnswer)
+        #expect(freeform.questionPrompt?.questions.first?.question == "What example should be used?")
+        #expect(freeform.questionPrompt?.questions.first?.options.isEmpty == true)
+        #expect(freeform.questionPrompt?.supportsInlineResponse == false)
+
+        let legacy = CodexRolloutReducer.snapshot(for: [asyncQuestionLine(arguments: requestUserInputArguments())])
+        let prompt = try #require(legacy.questionPrompt)
+        #expect(prompt.questions.first?.header == "Missing fields")
+        #expect(prompt.questions.first?.options.first?.description == "Generate the draft and highlight missing cells.")
+    }
+
+    @Test
+    func codexRolloutReducerClearsQuestionOnTerminalRateLimit() {
+        let waiting = CodexRolloutReducer.snapshot(for: [asyncQuestionLine()])
+        var snapshot = waiting
+        #expect(snapshot.questionPrompt != nil)
+        CodexRolloutReducer.apply(
+            line: rolloutLine(
+                timestamp: "2026-10-21T01:00:02.000Z", type: "event_msg",
+                payload: ["type": "token_count", "rate_limits": ["rate_limit_reached_type": "primary"]]
+            ),
+            to: &snapshot
+        )
+        #expect(snapshot.isCompleted)
+        #expect(snapshot.questionPrompt == nil)
+        #expect(snapshot.pendingQuestionCallID == nil)
+        let events = CodexRolloutReducer.events(
+            from: waiting, to: snapshot, sessionID: "async-session", transcriptPath: "/tmp/example.jsonl"
+        )
+        let resolutionIndex = events.firstIndex { $0.trackedActionableResolution != nil }
+        let completionIndex = events.firstIndex { $0.trackedSessionCompletion != nil }
+        #expect(resolutionIndex != nil)
+        #expect(completionIndex != nil)
+        if let resolutionIndex, let completionIndex {
+            #expect(resolutionIndex < completionIndex)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func codexQuestionPromptPreservesAsyncFlagAndDecodesLegacyRecords(isAsynchronous: Bool) throws {
+        let prompt = QuestionPrompt(
+            title: "Which example?", options: ["Example A", "Example B"],
+            responseChannel: .sourceApplication, isAsynchronous: isAsynchronous
+        )
+        let data = try JSONEncoder().encode(prompt)
+        #expect(try JSONDecoder().decode(QuestionPrompt.self, from: data) == prompt)
+        var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "isAsynchronous")
+        let legacyData = try JSONSerialization.data(withJSONObject: object)
+        let legacy = try JSONDecoder().decode(QuestionPrompt.self, from: legacyData)
+        #expect(!legacy.isAsynchronous)
+        #expect(legacy.title == prompt.title)
+        #expect(legacy.options == prompt.options)
+        #expect(legacy.responseChannel == .sourceApplication)
+    }
+
+    @Test
     func codexRolloutReducerAlignsCodexResponseItemStatuses() {
         var snapshot = CodexRolloutSnapshot()
 
@@ -1951,6 +2131,18 @@ private func sessionMetaLine(
             "cwd": cwd,
             "originator": "codex-tui",
             "source": "cli",
+        ]
+    )
+}
+
+private func asyncQuestionLine(
+    arguments: String = #"{"questions":[{"title":"Which example should be inspected?","options":["Example A","Example B"]}]}"#
+) -> String {
+    rolloutLine(
+        timestamp: "2026-10-21T01:00:00.000Z", type: "response_item",
+        payload: [
+            "type": "function_call", "name": "request_user_input_async",
+            "call_id": "call-async-question", "arguments": arguments,
         ]
     )
 }
