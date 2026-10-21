@@ -583,6 +583,101 @@ struct AppModelSessionListTests {
     }
 
     @Test
+    func newerRolloutTurnCanPresentAnotherCompletion() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "codex-next-turn"
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = false
+        model.showOnlyForNotifications = true
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .running, updatedAt: now)])
+
+        model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+            sessionID: sessionID,
+            summary: "First turn finished.",
+            timestamp: now.addingTimeInterval(1)
+        )))
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        model.notchClose()
+
+        // Exercise the real parser ordering: metadata is applied before activity,
+        // so session.updatedAt already equals the new activity timestamp.
+        let oldSnapshot = CodexRolloutSnapshot(
+            summary: "First turn finished.", phase: .completed,
+            updatedAt: now.addingTimeInterval(1), isCompleted: true
+        )
+        let newSnapshot = CodexRolloutSnapshot(
+            summary: "Prompt: Continue.", updatedAt: now.addingTimeInterval(2),
+            lastUserPrompt: "Continue."
+        )
+        let events = CodexRolloutReducer.events(
+            from: oldSnapshot, to: newSnapshot, sessionID: sessionID,
+            transcriptPath: "/tmp/codex-next-turn.jsonl"
+        )
+        #expect(events.count == 2)
+        for event in events {
+            model.applyTrackedEvent(event, ingress: .rollout)
+        }
+        #expect(model.state.session(id: sessionID)?.phase == .running)
+        #expect(model.notchStatus == .closed)
+
+        model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+            sessionID: sessionID,
+            summary: "Second turn finished.",
+            timestamp: now.addingTimeInterval(3)
+        )))
+        #expect(model.state.session(id: sessionID)?.summary == "Second turn finished.")
+        #expect(model.notchStatus == .opened)
+        #expect(model.notchOpenReason == .notification)
+        #expect(model.hasPendingNotificationAutoCollapse)
+        #expect(model.islandSurface == .sessionList(actionableSessionID: sessionID))
+    }
+
+    @Test(arguments: [-1.0, 0.0])
+    func lateRolloutActivityDoesNotReopenCompletedTurn(activityOffset: TimeInterval) {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "codex-late-activity"
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = false
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .running, updatedAt: now)])
+        let completion = AgentEvent.sessionCompleted(SessionCompleted(
+            sessionID: sessionID, summary: "Finished.", timestamp: now.addingTimeInterval(1)
+        ))
+        model.applyTrackedEvent(completion)
+        model.notchClose()
+
+        model.applyTrackedEvent(.activityUpdated(SessionActivityUpdated(
+            sessionID: sessionID, summary: "Late running snapshot.", phase: .running,
+            timestamp: now.addingTimeInterval(1 + activityOffset)
+        )), ingress: .rollout)
+        #expect(model.state.session(id: sessionID)?.phase == .completed)
+        #expect(model.state.session(id: sessionID)?.summary == "Finished.")
+
+        model.applyTrackedEvent(completion, ingress: .rollout)
+        #expect(model.notchStatus == .closed)
+        #expect(model.notchOpenReason == nil)
+    }
+
+    @Test
+    func recoveredCompletionAcceptsNewTurnAfterMetadata() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "recovered-completed"
+        let model = AppModel()
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .completed, updatedAt: now)])
+        for event in CodexRolloutReducer.events(
+            from: CodexRolloutSnapshot(summary: "Finished.", phase: .completed, updatedAt: now, isCompleted: true),
+            to: CodexRolloutSnapshot(summary: "Prompt: Continue.", updatedAt: now.addingTimeInterval(1), lastUserPrompt: "Continue."),
+            sessionID: sessionID,
+            transcriptPath: "/tmp/recovered-completed.jsonl"
+        ) {
+            model.applyTrackedEvent(event, ingress: .rollout)
+        }
+        #expect(model.state.session(id: sessionID)?.phase == .running)
+    }
+
+    @Test
     func bridgeNotificationIsSuppressedWhenSessionIsAlreadyFrontmost() async throws {
         let now = Date(timeIntervalSince1970: 2_000)
         let model = AppModel(
@@ -765,6 +860,101 @@ struct AppModelSessionListTests {
         #expect(model.islandSurface == .sessionList())
         #expect(model.state.session(id: "codex-plan-question")?.phase == .running)
         #expect(model.state.session(id: "codex-plan-question")?.questionPrompt == nil)
+    }
+
+    @Test
+    func asyncCodexQuestionSurvivesTurnCompletionUntilResolved() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "async-question"
+        let model = AppModel(isNotificationSessionAlreadyFrontmost: { _ in true })
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = true
+        model.showOnlyForNotifications = true
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .running, updatedAt: now)])
+        model.applyTrackedEvent(.questionAsked(QuestionAsked(
+            sessionID: sessionID,
+            prompt: QuestionPrompt(
+                title: "Choose the next step.", options: ["Continue", "Stop"],
+                responseChannel: .sourceApplication, isAsynchronous: true
+            ),
+            timestamp: now.addingTimeInterval(1)
+        )), ingress: .rollout)
+
+        // The CLI Stop hook and rollout turn_complete may race in either order.
+        for ingress in [TrackedEventIngress.bridge, .rollout] {
+            model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+                sessionID: sessionID, summary: "Waiting for your answer.",
+                timestamp: now.addingTimeInterval(2)
+            )), ingress: ingress)
+            #expect(model.state.session(id: sessionID)?.phase == .waitingForAnswer)
+            #expect(model.state.session(id: sessionID)?.questionPrompt?.title == "Choose the next step.")
+            #expect(model.notchStatus == .opened)
+            #expect(model.notchOpenReason == .notification)
+            #expect(!model.hasPendingNotificationAutoCollapse)
+        }
+
+        model.applyTrackedEvent(.actionableStateResolved(ActionableStateResolved(
+            sessionID: sessionID, summary: "Codex received your answer.",
+            timestamp: now.addingTimeInterval(3)
+        )), ingress: .rollout)
+        #expect(model.state.session(id: sessionID)?.phase == .running)
+        #expect(model.state.session(id: sessionID)?.questionPrompt == nil)
+        #expect(model.notchStatus == .closed)
+        #expect(model.islandSurface == .sessionList())
+
+        model.suppressFrontmostNotifications = false
+        model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+            sessionID: sessionID, summary: "Answered turn finished.",
+            timestamp: now.addingTimeInterval(4)
+        )))
+        #expect(model.notchStatus == .opened)
+        #expect(model.hasPendingNotificationAutoCollapse)
+    }
+
+    @Test(arguments: [false, true])
+    func asyncCodexQuestionClearsOnExplicitTermination(isSessionEnd: Bool) {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "terminated-async-question"
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = false
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .running, updatedAt: now)])
+        model.applyTrackedEvent(.questionAsked(QuestionAsked(
+            sessionID: sessionID,
+            prompt: QuestionPrompt(
+                title: "Choose the next step.", options: ["Continue"],
+                responseChannel: .sourceApplication, isAsynchronous: true
+            ),
+            timestamp: now.addingTimeInterval(1)
+        )), ingress: .rollout)
+        model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+            sessionID: sessionID, summary: "Terminated.", timestamp: now.addingTimeInterval(2),
+            isInterrupt: !isSessionEnd, isSessionEnd: isSessionEnd
+        )))
+        #expect(model.state.session(id: sessionID)?.phase == .completed)
+        #expect(model.state.session(id: sessionID)?.questionPrompt == nil)
+        #expect(model.hasPendingNotificationAutoCollapse)
+    }
+
+    @Test
+    func synchronousCodexQuestionStillCompletesNormally() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let sessionID = "synchronous-question"
+        let model = AppModel()
+        model.isSoundMuted = true
+        model.suppressFrontmostNotifications = false
+        model.state = SessionState(sessions: [listSession(id: sessionID, phase: .running, updatedAt: now)])
+        model.applyTrackedEvent(.questionAsked(QuestionAsked(
+            sessionID: sessionID,
+            prompt: QuestionPrompt(title: "Continue?", options: ["Yes"], responseChannel: .sourceApplication),
+            timestamp: now.addingTimeInterval(1)
+        )), ingress: .rollout)
+        model.applyTrackedEvent(.sessionCompleted(SessionCompleted(
+            sessionID: sessionID, summary: "Finished.", timestamp: now.addingTimeInterval(2)
+        )))
+        #expect(model.state.session(id: sessionID)?.phase == .completed)
+        #expect(model.state.session(id: sessionID)?.questionPrompt == nil)
+        #expect(model.hasPendingNotificationAutoCollapse)
     }
 
     @Test

@@ -266,32 +266,52 @@ public struct QuestionPrompt: Equatable, Identifiable, Codable, Sendable {
     /// are sent back through the bridge. Rollout-only prompts explicitly use
     /// `.sourceApplication` because no hook request is waiting for a response.
     public var responseChannel: QuestionResponseChannel?
+    /// Asynchronous prompts remain actionable while the agent continues or ends its current turn.
+    public var isAsynchronous: Bool
 
     public init(
         id: UUID = UUID(),
         title: String,
         options: [String],
         questions: [QuestionPromptItem] = [],
-        responseChannel: QuestionResponseChannel? = nil
+        responseChannel: QuestionResponseChannel? = nil,
+        isAsynchronous: Bool = false
     ) {
         self.id = id
         self.title = title
         self.options = options
         self.questions = questions
         self.responseChannel = responseChannel
+        self.isAsynchronous = isAsynchronous
     }
 
     public init(
         id: UUID = UUID(),
         title: String,
         questions: [QuestionPromptItem],
-        responseChannel: QuestionResponseChannel? = nil
+        responseChannel: QuestionResponseChannel? = nil,
+        isAsynchronous: Bool = false
     ) {
         self.id = id
         self.title = title
         self.questions = questions
         self.options = questions.first?.options.map(\.label) ?? []
         self.responseChannel = responseChannel
+        self.isAsynchronous = isAsynchronous
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, options, questions, responseChannel, isAsynchronous
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        options = try container.decode([String].self, forKey: .options)
+        questions = try container.decode([QuestionPromptItem].self, forKey: .questions)
+        responseChannel = try container.decodeIfPresent(QuestionResponseChannel.self, forKey: .responseChannel)
+        isAsynchronous = try container.decodeIfPresent(Bool.self, forKey: .isAsynchronous) ?? false
     }
 
     public var supportsInlineResponse: Bool {

@@ -568,6 +568,11 @@ final class AppModel {
     @ObservationIgnored
     private var notificationPresentationTask: Task<Void, Never>?
 
+    // Keep completion time separate from updatedAt: rollout metadata arrives
+    // before its activity event and can advance updatedAt while still completed.
+    @ObservationIgnored
+    private var completedTurnTimestamps: [String: Date] = [:]
+
     private static func appearanceDefaultsKey(_ profile: IslandAppearanceDisplayProfile, _ name: String) -> String {
         "appearance.island.v8.\(profile.rawValue).\(name)"
     }
@@ -1612,6 +1617,18 @@ final class AppModel {
         updateLastActionMessage: Bool = true,
         ingress: TrackedEventIngress = .bridge
     ) {
+        // Async Codex questions remain answerable after the agent's turn ends.
+        // Only an answer/new turn resolution or an explicit teardown clears them.
+        if case let .sessionCompleted(payload) = event,
+           payload.isInterrupt != true,
+           payload.isSessionEnd != true,
+           let session = state.session(id: payload.sessionID),
+           session.phase == .waitingForAnswer,
+           session.questionPrompt?.isAsynchronous == true,
+           session.questionPrompt?.supportsInlineResponse == false {
+            return
+        }
+
         // Snapshot whether this session was already completed before applying
         // the event. Used to suppress duplicate/stale completion notifications
         // (e.g. rollout watcher re-discovering an old completion on startup,
@@ -1621,15 +1638,35 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
+        // Capture recovered completion times before metadata advances updatedAt.
+        if case let .sessionMetadataUpdated(payload) = event,
+           let session = state.session(id: payload.sessionID),
+           session.phase == .completed,
+           completedTurnTimestamps[session.id] == nil {
+            completedTurnTimestamps[session.id] = session.updatedAt
+        }
+
+        // A delayed rollout snapshot must not undo a bridge completion. A later
+        // turn, however, must return to running so its completion can notify again.
         if ingress == .rollout,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
-           state.session(id: payload.sessionID)?.phase == .completed {
-            return
+           let session = state.session(id: payload.sessionID),
+           session.phase == .completed {
+            let completedAt = completedTurnTimestamps[session.id] ?? session.updatedAt
+            guard payload.timestamp > completedAt else { return }
+        }
+
+        switch event {
+        case let .sessionCompleted(payload):
+            completedTurnTimestamps[payload.sessionID] = max(
+                completedTurnTimestamps[payload.sessionID] ?? payload.timestamp,
+                payload.timestamp
+            )
+        case let .sessionStarted(payload):
+            completedTurnTimestamps.removeValue(forKey: payload.sessionID)
+        default:
+            break
         }
 
         state.apply(event)
